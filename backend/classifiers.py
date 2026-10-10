@@ -174,18 +174,26 @@ class MlxInProcessClassifier(BaseClassifier):
         return _on_mlx_thread(self._classify, text)
 
     def _classify(self, text: str) -> ClassifierOutput:
+        """One prompt pass. A full forward over the prompt gives the A-H softmax confidence (the numbers the
+        thresholds were calibrated on) and fills a KV cache; greedy decoding then continues from that cache
+        for the priority, so the prompt is never processed twice."""
         import mlx.core as mx  # lazy
-        from mlx_lm import generate
+        from mlx_lm import stream_generate
+        from mlx_lm.models.cache import make_prompt_cache
         t0 = time.perf_counter()
-        prompt = self._prompt(text)
-        toks = self.tokenizer.encode(prompt, add_special_tokens=False)
-        logits = self.model(mx.array(toks)[None])[:, -1, :][0].astype(mx.float32)
+        toks = self.tokenizer.encode(self._prompt(text), add_special_tokens=False)
+        cache = make_prompt_cache(self.model)
+        logits = self.model(mx.array(toks)[None], cache=cache)[:, -1, :][0].astype(mx.float32)
         scores = {L: max(float(logits[i]) for i in ids) for L, ids in self._ids().items()}  # float() syncs
         probs = softmax_over_letters(scores)
         letter = max(probs, key=probs.get)
         t1 = time.perf_counter()
-        out = generate(self.model, self.tokenizer, prompt=prompt, max_tokens=20)  # greedy (temp 0)
-        _, prio = parse_answer(out)
+        out = [int(mx.argmax(logits).item())]  # greedy first token, then continue from the cache
+        if out[0] not in self.tokenizer.eos_token_ids:
+            for r in stream_generate(self.model, self.tokenizer, prompt=mx.array(out), prompt_cache=cache,
+                                     max_tokens=19):
+                out.append(r.token)
+        _, prio = parse_answer(self.tokenizer.decode(out))
         t2 = time.perf_counter()
         # P3 only when the model emitted no parsable priority
         return ClassifierOutput(letter, prio or "P3", probs[letter],
