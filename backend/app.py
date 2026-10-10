@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
-from backend import metrics
+from backend import archive, metrics
 from backend.classifiers import BaseClassifier, make_classifier
 from backend.db import DB
 from backend.events import Broadcaster, train_payload
@@ -157,6 +157,34 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
                 "timeseries": metrics.timeseries(db), "tickets": recent(50),
                 "review_queue": metrics.review_queue(db), "rounds": db.list_rounds(),
                 "eval_compare": metrics.eval_compare()}
+
+    # ------------------------------------------------------------ reset + archive
+    def _ticket_rows(snap):
+        snap["tickets"] = [_ticket_out(t) for t in snap["tickets"]]
+        return snap
+
+    @app.post("/api/demo/reset", dependencies=[Depends(require_key)])
+    def demo_reset():
+        if any(v == "running" for v in ctx.jobs.values()):
+            raise HTTPException(409, "a training round is running; reset after it finishes")
+        if ctx.stream_task and not ctx.stream_task.done():
+            ctx.stream_task.cancel()
+        ctx.stream_task = None
+        snap = archive.reset(db)
+        ctx.telemetry.log("warning", "reset", "live data archived and reset", snapshot=snap["id"],
+                          tickets=snap["tickets"])
+        return {"snapshot": snap, "summary": summary()}
+
+    @app.get("/api/snapshots")
+    def snapshots():
+        return archive.list_snapshots()
+
+    @app.get("/api/snapshots/{sid}")
+    def snapshot_detail(sid: str):
+        snap = archive.open_snapshot(sid)
+        if snap is None:
+            raise HTTPException(404, "snapshot not found")
+        return _ticket_rows(snap)
 
     # ------------------------------------------------------------ training
     @app.post("/api/train/round", dependencies=[Depends(require_key)])
