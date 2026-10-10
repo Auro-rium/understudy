@@ -1,5 +1,6 @@
 "use client";
 
+import { useNarrow } from "@/components/results/useNarrow";
 import { useInView, useReducedMotion } from "motion/react";
 import { useRef } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -94,14 +95,73 @@ function ScoreTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   );
 }
 
+/** Own component so the in-view ref is attached on first mount (the parent renders nothing until data arrives). */
+function ScoreLine({ points, yMin, yMax }: { points: Point[]; yMin: number; yMax: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "0px 0px -10% 0px" });
+  const reduce = useReducedMotion();
+  const narrow = useNarrow();
+  return (
+    <div
+      ref={ref}
+      className="h-[22rem] sm:h-[26rem]"
+      role="img"
+      aria-label={`Macro-F1 for ${points
+        .map((p) => `${p.label} ${fmtPct(p.f1, 1)}${p.status === "rejected" ? " not promoted" : ""}`)
+        .join(", ")}`}
+    >
+      {inView ? (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={points} margin={{ top: 34, right: narrow ? 12 : 28, bottom: 4, left: 0 }}>
+            <CartesianGrid stroke="#262b3b" strokeOpacity={0.7} vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: narrow ? 16 : 17, fill: "#bcc0d0" }}
+              tickLine={false}
+              axisLine={{ stroke: "#353c52" }}
+              padding={{ left: narrow ? 30 : 36, right: narrow ? 26 : 36 }}
+              height={36}
+            />
+            <YAxis
+              domain={[yMin, yMax]}
+              tickCount={Math.round((yMax - yMin) * 10) + 1}
+              tick={{ fontSize: 16, fill: INK_3 }}
+              tickLine={false}
+              axisLine={false}
+              width={narrow ? 46 : 52}
+              tickFormatter={(v: number) => fmtPct(v, 0)}
+            />
+            <Tooltip content={<ScoreTooltip />} cursor={{ stroke: "#353c52" }} />
+            <Line
+              dataKey="promotedF1"
+              stroke={PROMOTED}
+              strokeWidth={2.5}
+              connectNulls
+              dot={PromotedDot}
+              activeDot={false}
+              isAnimationActive={!reduce}
+              animationDuration={1100}
+              animationEasing="ease-out"
+            />
+            <Line
+              dataKey="rejectedF1"
+              stroke="none"
+              dot={RejectedDot}
+              activeDot={false}
+              isAnimationActive={false}
+              legendType="none"
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : null}
+    </div>
+  );
+}
+
 /** Macro-F1 of the base model and of each round's adapter, from the exported eval. */
 export function ScoreChart() {
   const { state } = useStore();
   const { rounds, evalCompare } = state;
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: "0px 0px -10% 0px" });
-  const reduce = useReducedMotion();
-
   const sorted = [...rounds].sort((a, b) => a.round - b.round);
   const base = evalCompare?.models.find((m) => m.name === "base") ?? null;
   const points: Point[] = [];
@@ -151,59 +211,7 @@ export function ScoreChart() {
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:gap-8">
         <div>
-          <div
-            ref={ref}
-            className="h-[22rem] sm:h-[26rem]"
-            role="img"
-            aria-label={`Macro-F1 for ${points
-              .map((p) => `${p.label} ${fmtPct(p.f1, 1)}${p.status === "rejected" ? " not promoted" : ""}`)
-              .join(", ")}`}
-          >
-            {inView ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={points} margin={{ top: 34, right: 28, bottom: 4, left: 0 }}>
-                  <CartesianGrid stroke="#262b3b" strokeOpacity={0.7} vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 17, fill: "#bcc0d0" }}
-                    tickLine={false}
-                    axisLine={{ stroke: "#353c52" }}
-                    padding={{ left: 36, right: 36 }}
-                    height={36}
-                  />
-                  <YAxis
-                    domain={[yMin, yMax]}
-                    tickCount={Math.round((yMax - yMin) * 10) + 1}
-                    tick={{ fontSize: 16, fill: INK_3 }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={52}
-                    tickFormatter={(v: number) => fmtPct(v, 0)}
-                  />
-                  <Tooltip content={<ScoreTooltip />} cursor={{ stroke: "#353c52" }} />
-                  <Line
-                    dataKey="promotedF1"
-                    stroke={PROMOTED}
-                    strokeWidth={2.5}
-                    connectNulls
-                    dot={PromotedDot}
-                    activeDot={false}
-                    isAnimationActive={!reduce}
-                    animationDuration={1100}
-                    animationEasing="ease-out"
-                  />
-                  <Line
-                    dataKey="rejectedF1"
-                    stroke="none"
-                    dot={RejectedDot}
-                    activeDot={false}
-                    isAnimationActive={false}
-                    legendType="none"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : null}
-          </div>
+          <ScoreLine points={points} yMin={yMin} yMax={yMax} />
           <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-base text-ink-2">
             <li className="flex items-center gap-2">
               <svg width="30" height="14" aria-hidden>

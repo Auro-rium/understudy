@@ -25,6 +25,9 @@ export function LossChart({ data, mode, xMax, yMax, height = 240 }: LossChartPro
   const reduce = useReducedMotion();
   const show = mode === "live" || inView;
   const animate = mode === "draw" && !reduce;
+  const top = yMax ?? Math.max(1, ...data.map((d) => d.loss));
+  const yTop = Math.ceil(top);
+  const yTicks = Array.from({ length: yTop + 1 }, (_, i) => i);
 
   return (
     <div
@@ -48,16 +51,18 @@ export function LossChart({ data, mode, xMax, yMax, height = 240 }: LossChartPro
               tick={AXIS}
               tickLine={false}
               axisLine={{ stroke: "#353c52", strokeWidth: 1 }}
-              height={32}
-              label={{ value: "training step", position: "insideBottomRight", offset: -2, style: AXIS }}
+              height={52}
+              label={{ value: "training step", position: "insideBottom", offset: 0, style: AXIS }}
             />
             <YAxis
-              domain={[0, yMax ?? "auto"]}
+              domain={[0, yTop]}
+              ticks={yTicks}
+              allowDataOverflow
               tick={AXIS}
               tickLine={false}
               axisLine={false}
               width={44}
-              tickFormatter={(v: number) => v.toFixed(1)}
+              tickFormatter={(v: number) => String(v)}
             />
             <Tooltip
               cursor={{ stroke: "#353c52" }}
