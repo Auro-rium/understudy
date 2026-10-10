@@ -81,6 +81,7 @@ def test_offline_flow_and_auto_recovery(env):
 def test_train_501_without_module_and_with_stub(env, monkeypatch):
     c, app, teacher, tmp = env
     monkeypatch.setitem(sys.modules, "training", None)
+    monkeypatch.setitem(sys.modules, "training.round", None)
     assert c.post("/api/train/round", json={"backend": "mlx_local"}).status_code == 501
     mod = types.ModuleType("training.round")
     pkg = types.ModuleType("training"); pkg.__path__ = []
