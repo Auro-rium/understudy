@@ -1,36 +1,174 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Understudy: demo frontend
 
-## Getting Started
+The browser UI for **Understudy**, built by team e/acc for the Awign Hackathon (Open Theme).
 
-First, run the development server:
+Gig workers send support tickets in English (payment delays, deductions, KYC, app issues, task assignment and ratings, safety). A local Gemma 4 model classifies each ticket into a category and a priority, which decides the team. When it is unsure it asks a cloud teacher model. The teacher's answers become training data, LoRA training rounds make Gemma better, and so the share handled locally rises while the cloud cost falls. Offline, unsure tickets go to a human review queue instead.
+
+This app shows that loop live. It makes **no external requests at runtime** (system fonts, no CDN, no images from the web), so it keeps working with Wi-Fi turned off.
+
+## Stack
+
+- Next.js 16 (App Router), React 19, TypeScript
+- Tailwind CSS v4 (design tokens in `src/app/globals.css`)
+- Recharts 3 for charts, `motion` (`motion/react`) for animation; reduced-motion is respected
+- No state library: one store (`src/lib/store.tsx`) behind `useStore()`
+
+## Quick start
+
+Open WebUI already uses port 3000 and the backend uses port 8000, so this app runs on **3001**.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd frontend
+cp .env.example .env.local
+npm install
+npm run build && npm start -- -p 3001
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open http://localhost:3001.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For development with hot reload:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev -- -p 3001
+```
 
-## Learn More
+Use the production build (`npm start`) for the actual demo: it is faster and has no dev overlay.
 
-To learn more about Next.js, take a look at the following resources:
+## Environment variables
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Set in `.env.local` (copy from `.env.example`). `NEXT_PUBLIC_*` values are **baked in at build time**, so rebuild after changing them.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | Base URL of the FastAPI backend. On Vercel this is the cloudflared tunnel URL. |
+| `NEXT_PUBLIC_MOCK` | `1` in `.env.example` | `1` = serve everything from the in-browser mock and show a **MOCK DATA** badge in the header. `0` = talk to the real backend at `NEXT_PUBLIC_API_URL`. |
 
-## Deploy on Vercel
+To run against the real backend: set `NEXT_PUBLIC_MOCK=0`, make sure the backend is up on :8000, then rebuild.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## The mock layer
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`src/lib/mock/engine.ts` is a deterministic in-browser simulator that implements the whole API contract below, including the live event feed, training rounds and offline mode. `src/lib/api.ts` picks the mock or `fetch` per call, and `src/lib/events.ts` picks the mock event bus or SSE, so pages never know which one they are talking to. Response shapes are defined once in `src/lib/types.ts` and mirror the backend.
+
+The mock is seeded (about 30 minutes of history, several past training rounds) so every page has something to show on first load. Nothing is persisted: reloading resets the simulation. Whenever mock data is on, the **MOCK DATA** badge is visible. Never present mock numbers as measured results.
+
+## API contract
+
+All paths are relative to `NEXT_PUBLIC_API_URL`.
+
+| Method and path | Returns / does |
+| --- | --- |
+| `GET /api/health` | `{status, model_version, mode}` |
+| `POST /api/classify` `{text}` | One classification: `{id, category, category_name, priority, team, source, confidence, latency_ms, cost_usd, model_version}` |
+| `GET /api/metrics/summary` | `{total, local_share, teacher_share, review_share, cost_usd_total, cost_avoided_usd, model_version, mode}` |
+| `GET /api/metrics/timeseries` | `[{t, local_share, cost_cumulative, cost_cloud_only_cumulative}]` |
+| `GET /api/tickets/recent?limit=N` | Newest-first tickets (classification fields plus `text`, `created_at`) |
+| `GET /api/review_queue` | `[{id, text, created_at}]` |
+| `GET /api/rounds` | Training rounds with loss curve, eval, cost, `promoted` and `reason` |
+| `GET /api/eval/compare` | Base vs trained vs teacher vs router: accuracy, macro F1, latency, cost per 1k, per-category F1, confusion matrices, `provisional` flag |
+| `GET /api/snapshot` | Everything above in one payload plus `generated_at` |
+| `POST /api/train/round` `{backend}` | `{job_id}`; progress arrives as events |
+| `POST /api/stream/start` `{rate_per_min}` | Starts the simulated ticket stream |
+| `POST /api/stream/stop` | Stops it |
+| `POST /api/mode/offline` `{offline}` | Forces offline (teacher disabled, unsure tickets go to review) or back online |
+| `GET /api/events` | Server-sent events: `prediction`, `train_progress`, `round_complete`, `mode` |
+
+## Realtime
+
+The store subscribes to `GET /api/events` (SSE). Events can be sent as `{type, data}` envelopes or as bare payloads with the SSE `event:` name giving the type. If the stream cannot connect, or drops, the app falls back to polling every **2 seconds** (`/api/tickets/recent`, `/api/health`, `/api/rounds`), keeps retrying SSE with backoff, and switches back when it succeeds. A banner under the header says when it is on polling. The store also refreshes summary, timeseries, review queue and health every 4 seconds as a safety net.
+
+## Offline demo notes
+
+- The page and all its assets are served by `npm start` on this machine. Fonts are the system stack; there are no web fonts, analytics or image CDNs.
+- The browser talks only to `127.0.0.1:8000` (backend) and `localhost:3001` (this app), both loopback, so turning Wi-Fi off does not affect them.
+- Load the page **once while online** before the demo so the snapshot cache below is populated.
+- The backend's own offline mode (`POST /api/mode/offline`) is separate from your network: it makes the router skip the teacher, so unsure tickets go to the review queue. The **Offline** badge in the header shows that mode.
+
+### Snapshot fallback
+
+While the backend is reachable the store saves the latest good state to `localStorage` (key `understudy.snapshot.v1`, at most once every 10 seconds). If the app loads and the backend is unreachable (for example the tunnel is down), it shows the cached state with a **"Snapshot from HH:MM:SS"** banner and keeps retrying in the background; it returns to live data when the backend answers. With no cached snapshot and no backend you get a "Can't reach the backend" banner and empty states.
+
+## Pages
+
+| Route | What it is |
+| --- | --- |
+| `/` | Landing: the pitch, the problem, live numbers (share handled locally, cloud cost, cost avoided), the loop explained, links in |
+| `/live` | Start and stop the ticket stream, watch routing as it happens, force offline, work the human review queue |
+| `/training` | Run a training round and watch it progress from collect to train to evaluate to promote |
+| `/results` | Base vs trained vs teacher: accuracy, speed, cost, per-category F1, confusion |
+
+Shared code: `src/lib/` (types, API, events, store, snapshot, format, mock), `src/components/ui/` (primitives), `src/components/shell/` (nav, banners), `src/components/landing/`.
+
+## Demo script
+
+Short version (the full presenter checklist is in [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md)):
+
+1. Open `/` and say what the three numbers mean.
+2. Go to `/live` and **start the stream**.
+3. **Watch the counters**: tickets arrive, most are answered locally, some go to the teacher.
+4. Go to `/training` and **run a training round**; watch the stages and the new version being promoted.
+5. Back on `/live`: the local share rises after the new version serves.
+6. **Force offline** (and turn Wi-Fi off): unsure tickets now land in the **review queue**.
+7. Open `/training` for the story of the rounds, then `/results` for the comparison.
+
+## Deploying to Vercel
+
+1. Import the repo in Vercel and set **Root Directory** to `frontend`. Leave the build and output settings at their defaults.
+2. Set environment variables:
+   - `NEXT_PUBLIC_API_URL` = your cloudflared tunnel URL (see below), `https://...trycloudflare.com`
+   - `NEXT_PUBLIC_MOCK` = `0` for the real backend, or `1` for a public preview that runs entirely on mock data
+3. Deploy.
+
+Things to know:
+
+- `NEXT_PUBLIC_` variables are compiled into the bundle. **After changing the tunnel URL you must redeploy.** Quick tunnels get a new URL on every run.
+- An HTTPS page cannot call an `http://` backend (mixed content is blocked). cloudflared URLs are HTTPS, so use those. Do not point a Vercel deployment at `http://127.0.0.1:8000`.
+- The backend's CORS settings must allow the Vercel origin (and `http://localhost:3001` for local runs).
+- SSE works through cloudflared, but proxies sometimes buffer it. If events arrive in bursts or not at all, the 2-second polling fallback covers it automatically; the backend should also send `Cache-Control: no-cache` and `X-Accel-Buffering: no` on `/api/events`.
+- A Vercel deployment cannot demo the Wi-Fi-off moment; for that use the local build.
+
+## cloudflared tunnel
+
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+
+The quick tunnel prints a `https://<random>.trycloudflare.com` URL. Put it in `NEXT_PUBLIC_API_URL` and redeploy. The URL changes each time you restart the tunnel. For a stable URL, create a named tunnel with a domain you control (`cloudflared tunnel login`, `cloudflared tunnel create`, route DNS, then `cloudflared tunnel run`).
+
+## Open WebUI side-by-side comparison
+
+Open WebUI runs on http://127.0.0.1:3000 against `mlx_lm.server` on :8080, started by the repo-root `start.sh`. It is already running for the demo and **this frontend does not change it**.
+
+If the backend serves both model versions (for example the base model and the trained adapter as separate model ids on the mlx server, or as two servers), you can compare them in Open WebUI:
+
+1. Open http://127.0.0.1:3000 and pick a model in the selector at the top of a chat.
+2. Click the **+** next to the model selector to add a second model.
+3. Send one prompt; the chat shows both answers side by side.
+4. Paste a ticket from `/live` to compare the base and trained models on the same text.
+
+Whether the trained model appears in Open WebUI depends on the backend actually serving it there; if only the base model is listed, there is nothing to compare.
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+| --- | --- |
+| "MOCK DATA" badge when you expected real data | `NEXT_PUBLIC_MOCK` is `1`. Set it to `0` in `.env.local` and rebuild. |
+| "Can't reach the backend" banner | Backend not running on :8000, or `NEXT_PUBLIC_API_URL` is wrong. Check `curl http://127.0.0.1:8000/api/health`. |
+| Changed `.env.local` but nothing changed | `NEXT_PUBLIC_` values are baked at build time. Rebuild (`npm run build`) or restart `npm run dev`. |
+| Browser console shows a CORS error | Backend CORS does not allow this origin (`http://localhost:3001` or the Vercel URL). |
+| Works locally, blocked on Vercel | Mixed content: the API URL is `http://`. Use the HTTPS cloudflared URL and redeploy. |
+| Vercel page worked, then stopped | The quick tunnel restarted and got a new URL. Update `NEXT_PUBLIC_API_URL` and redeploy. |
+| "Realtime stream unavailable, updating every 2 seconds" | SSE is blocked or buffered. Polling is covering it; the demo still works. Check the backend `/api/events` and tunnel buffering. |
+| "Snapshot from HH:MM:SS" banner | The backend is unreachable and cached data is shown. Restore the backend or tunnel; it reconnects by itself. |
+| Port 3001 already in use | Another process holds it. `npm start -- -p 3002` (and allow that origin in CORS). |
+| Numbers do not move | The stream is not started. Press start on `/live`. |
+| Blank or half-loaded page in dev | Stale `.next/`. Stop the server, delete `.next`, start again. |
+
+## Scripts
+
+| Command | Does |
+| --- | --- |
+| `npm run dev -- -p 3001` | Development server |
+| `npm run build` | Production build |
+| `npm start -- -p 3001` | Serve the production build |
+| `npm run lint` | ESLint |
