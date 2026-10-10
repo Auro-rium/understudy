@@ -45,9 +45,6 @@ def get_trainer(name: str, **kw) -> Trainer:
     if name == "modal":
         from training.modal import ModalTrainer
         return ModalTrainer()
-    if name == "nebius":
-        from training.nebius import NebiusTrainer
-        return NebiusTrainer()
     raise ValueError(f"unknown training backend {name!r}")
 
 
@@ -227,7 +224,7 @@ def run_round_async(backend="mlx_local", ctx=None, job_id=None, progress=None, o
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", default="mlx_local", choices=["mlx_local", "aws", "modal", "nebius"])
+    ap.add_argument("--backend", default="mlx_local", choices=["mlx_local", "aws", "modal"])
     ap.add_argument("--seed-from-train-pool", action="store_true")
     ap.add_argument("--iters", type=int)
     ap.add_argument("--min-delta", type=float, default=0.0)

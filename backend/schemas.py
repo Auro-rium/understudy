@@ -107,7 +107,7 @@ class RoundOut(BaseModel):
 
 
 class TrainRequest(BaseModel):
-    backend: Literal["mlx_local", "aws", "modal", "nebius"] = "mlx_local"
+    backend: Literal["mlx_local", "aws", "modal"] = "mlx_local"
 
 
 class StreamStart(BaseModel):
