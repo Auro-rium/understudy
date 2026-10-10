@@ -7,7 +7,7 @@ import { fmtTime } from "@/lib/format";
 export const WINDOW = 120;
 
 export function axisTime(iso: string): string {
-  return fmtTime(iso).slice(0, 5);
+  return fmtTime(iso);
 }
 
 /** Shared tooltip chrome: surface card, ink text, swatch + label + exact value rows. */

@@ -136,7 +136,8 @@ export function ShareChart() {
                 tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={{ stroke: "var(--line-strong)" }}
-                minTickGap={64}
+                minTickGap={72}
+                tickMargin={10}
               />
               <YAxis
                 domain={[0, 1]}
@@ -155,7 +156,7 @@ export function ShareChart() {
               {markers.map((m, i) => (
                 <ReferenceLine
                   key={m.at}
-                  x={m.at}
+                  x={data.findIndex((d) => d.t === m.at)}
                   stroke={m.rejected ? "var(--spot)" : "var(--text-3)"}
                   strokeWidth={1.5}
                   strokeDasharray={m.rejected ? "2 5" : "6 4"}

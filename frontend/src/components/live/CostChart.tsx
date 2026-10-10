@@ -10,7 +10,8 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  useCartesianScale,
+  useXAxisScale,
+  useYAxisScale,
   usePlotArea,
 } from "recharts";
 import { useStore } from "@/lib/store";
@@ -32,11 +33,18 @@ const halo = {
 };
 
 /** Direct labels at the right edge plus "Saved $X" between the two lines. */
-function EndLabels({ last, saved }: { last: Row; saved: number }) {
+function EndLabels({ last, lastIndex, saved }: { last: Row; lastIndex: number; saved: number }) {
   const plot = usePlotArea();
-  const a = useCartesianScale({ x: last.t, y: last.actual });
-  const c = useCartesianScale({ x: last.t, y: last.cloud });
-  if (!a || !c || !plot) return null;
+  const xs = useXAxisScale();
+  const ys = useYAxisScale();
+  if (!plot || !xs || !ys) return null;
+  // The category axis is keyed by data index (dataKey only supplies tick labels).
+  const x = xs(lastIndex);
+  const ya = ys(last.actual);
+  const yc = ys(last.cloud);
+  if (x == null || ya == null || yc == null) return null;
+  const a = { x, y: ya };
+  const c = { x, y: yc };
 
   const wide = plot.width > 300;
   if (!wide) {
@@ -135,7 +143,8 @@ export function CostChart() {
                 tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={{ stroke: "var(--line-strong)" }}
-                minTickGap={64}
+                minTickGap={72}
+                tickMargin={10}
               />
               <YAxis
                 domain={[0, "auto"]}
@@ -144,7 +153,7 @@ export function CostChart() {
                 tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={false}
-                width={64}
+                width={78}
               />
               <Tooltip content={CostTip} cursor={{ stroke: "var(--text-3)", strokeWidth: 1 }} isAnimationActive={false} />
               {/* invisible base + visible gap stacked on top = the filled band between the lines */}
@@ -192,7 +201,7 @@ export function CostChart() {
                 isAnimationActive
                 animationDuration={600}
               />
-              <EndLabels last={last} saved={saved} />
+              <EndLabels last={last} lastIndex={data.length - 1} saved={saved} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
