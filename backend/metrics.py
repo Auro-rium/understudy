@@ -27,28 +27,20 @@ def timeseries(db: DB, bucket: str = "tickets", size: int = 10) -> list[dict]:
     """bucket='tickets': every `size` tickets; bucket='minute': per UTC minute.
     local_share is within the bucket; costs are cumulative at the end of the bucket.
     Cloud-only counterfactual = tickets_so_far * average teacher cost per call."""
-    rows = db.query("SELECT id, source, cost_usd, created_at FROM tickets ORDER BY id")
     avg, _ = avg_teacher_cost(db)
-    groups: list[list[dict]] = []
-    if bucket == "minute":
-        cur_key = None
-        for r in rows:
-            k = r["created_at"][:16]
-            if k != cur_key:
-                groups.append([])
-                cur_key = k
-            groups[-1].append(r)
-    else:
-        size = max(1, int(size))
-        groups = [rows[i:i + size] for i in range(0, len(rows), size)]
+    # Grouped in SQL (this is polled every ~2 s); the bare created_at is the one on the row with MAX(id),
+    # i.e. the last ticket of the bucket.
+    key = "substr(created_at, 1, 16)" if bucket == "minute" else "(rn - 1) / %d" % max(1, int(size))
+    groups = db.query(
+        "WITH t AS (SELECT id, source, cost_usd, created_at, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM tickets) "
+        "SELECT COUNT(*) AS n, SUM(source = 'local') AS local_n, SUM(cost_usd) AS cost, MAX(id) AS last_id, "
+        f"created_at FROM t GROUP BY {key} ORDER BY MAX(id)")
     out, cum_cost, seen = [], 0.0, 0
     for g in groups:
-        cum_cost += sum(r["cost_usd"] for r in g)
-        seen += len(g)
-        out.append({"t": g[-1]["created_at"],
-                    "local_share": sum(1 for r in g if r["source"] == "local") / len(g),
-                    "cost_cumulative": cum_cost,
-                    "cost_cloud_only_cumulative": seen * avg})
+        cum_cost += g["cost"]
+        seen += g["n"]
+        out.append({"t": g["created_at"], "local_share": g["local_n"] / g["n"],
+                    "cost_cumulative": cum_cost, "cost_cloud_only_cumulative": seen * avg})
     return out
 
 
