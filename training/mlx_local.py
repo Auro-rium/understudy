@@ -73,7 +73,8 @@ class MlxLocalTrainer(Trainer):
                  work_dir: Optional[str] = None, adapters_dir: Optional[str] = None,
                  cmd_override: Optional[list] = None):
         self.model, self.iters, self.epochs, self.max_iters = model, iters, epochs, max_iters
-        self.num_layers, self.lr, self.max_seq = num_layers, learning_rate, max_seq_length
+        self.num_layers, self.max_seq = num_layers, max_seq_length
+        self.lr = float(os.environ.get("UNDERSTUDY_LR") or learning_rate)
         self.python = python or os.environ.get("MLX_PYTHON") or sys.executable
         self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="understudy_train_"))
         self.adapters_dir = Path(adapters_dir) if adapters_dir else ROOT / "adapters"
@@ -114,7 +115,10 @@ class MlxLocalTrainer(Trainer):
         train_curve, val_curve, tail = [], [], []
         proc = subprocess.Popen(self.command(data_dir, str(adapter)), stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, bufsize=1)
+        raw_log = (adapter / "train.log").open("w")  # keep raw mlx_lm output for debugging
         for line in proc.stdout:
+            raw_log.write(line)
+            raw_log.flush()
             tail = (tail + [line.rstrip()])[-30:]
             ev = parse_loss_line(line)
             if not ev:
