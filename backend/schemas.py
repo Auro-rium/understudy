@@ -56,6 +56,7 @@ class Health(BaseModel):
     status: str
     model_version: str
     mode: Mode
+    streaming: bool = False
 
 
 class MetricsSummary(BaseModel):

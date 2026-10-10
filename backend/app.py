@@ -107,7 +107,8 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
 
     # ------------------------------------------------------------ reads
     def health():
-        return {"status": "ok", "model_version": ctx.holder.version, "mode": ctx.mode.mode}
+        return {"status": "ok", "model_version": ctx.holder.version, "mode": ctx.mode.mode,
+                "streaming": bool(ctx.stream_task and not ctx.stream_task.done())}
 
     def summary():
         return metrics.summary(db, ctx.holder.version, ctx.mode.mode)
