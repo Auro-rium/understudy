@@ -200,7 +200,10 @@ function step(state: StoreState, a: Action): StoreState {
         rounds: a.data.rounds,
         evalCompare: a.data.evalCompare,
         mode: a.data.health.mode,
-        modelVersion: a.data.health.model_version,
+        // the export's health block can predate the last promotion; for a saved snapshot trust the rounds
+        modelVersion: live
+          ? a.data.health.model_version
+          : ([...a.data.rounds].reverse().find((r) => r.promoted)?.model_version ?? a.data.health.model_version),
         // markers are anchored on timeseries points: none without a timeseries, and only for rounds that still exist
         roundMarkers:
           live && a.data.timeseries.length > 0
