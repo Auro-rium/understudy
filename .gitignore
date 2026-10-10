@@ -1,0 +1,5 @@
+.venv/
+.venv-webui/
+.webui_secret_key
+data/
+logs/
