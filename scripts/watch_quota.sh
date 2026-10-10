@@ -8,8 +8,6 @@ REGION="${AWS_REGION:-us-east-1}"
 
 # "service-code quota-code label"
 WATCH=(
-  "sagemaker L-2D6DEB3C ml.g5.2xlarge-training"
-  "sagemaker L-B6D80D9C ml.g5.xlarge-training"
   "ec2 L-DB2E81BA ec2-on-demand-G-and-VT-vCPUs"
 )
 
