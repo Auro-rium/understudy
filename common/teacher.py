@@ -109,14 +109,15 @@ class Teacher:
                  rate: Optional[float] = None, cache_dir: Optional[Path] = None,
                  max_retries: int = 5, backoff_base: float = 1.5,
                  timeout: float = 120.0, transport: Optional[Callable] = None,
-                 use_cache: bool = True, base_url: Optional[str] = None):
+                 use_cache: bool = True, base_url: Optional[str] = None,
+                 env_prefix: str = "TEACHER"):
         load_env()
-        self.model = model or os.environ.get("TEACHER_MODEL", "")
+        self.model = model or os.environ.get(f"{env_prefix}_MODEL", "")
         self.api_key = api_key if api_key is not None else os.environ.get("BACKBOARD_API_KEY", "")
         self.base_url = (base_url or os.environ.get("BACKBOARD_BASE_URL")
                          or "https://app.backboard.io/api").rstrip("/")
-        self.price_in = float(os.environ.get("TEACHER_PRICE_IN_PER_M") or 0)
-        self.price_out = float(os.environ.get("TEACHER_PRICE_OUT_PER_M") or 0)
+        self.price_in = float(os.environ.get(f"{env_prefix}_PRICE_IN_PER_M") or 0)
+        self.price_out = float(os.environ.get(f"{env_prefix}_PRICE_OUT_PER_M") or 0)
         self.limiter = RateLimiter(rate if rate is not None
                                    else float(os.environ.get("TEACHER_RATE", 2)))
         self.cache_dir = Path(cache_dir) if cache_dir else ROOT / "data" / ".teacher_cache"

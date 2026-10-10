@@ -87,7 +87,7 @@ def main():
     todo = [b for b in batches if not all(s["spec_id"] in have for s in b)]
     print(f"{len(specs)} specs, {len(have)} done, {len(todo)} batches to run", flush=True)
     try:
-        teacher = get_teacher()
+        teacher = get_teacher(env_prefix="GENERATOR")  # GENERATOR_MODEL / GENERATOR_PRICE_*
         teacher.require_config()
     except TeacherConfigError as e:
         sys.exit(f"ERROR: {e}")
