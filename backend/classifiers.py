@@ -28,6 +28,7 @@ class ClassifierOutput:
     priority: str
     confidence: float  # softmax prob of chosen letter over A-H
     timings: Optional[dict] = None  # stage -> ms (model_forward, model_generate), for telemetry
+    logits: Optional[dict] = None  # letter -> raw logit at the first answer token (best token variant), telemetry only
 
 
 def softmax_over_letters(scores: dict) -> dict:
@@ -197,7 +198,7 @@ class MlxInProcessClassifier(BaseClassifier):
         t2 = time.perf_counter()
         # P3 only when the model emitted no parsable priority
         return ClassifierOutput(letter, prio or "P3", probs[letter],
-                                {"model_forward": (t1 - t0) * 1000, "model_generate": (t2 - t1) * 1000})
+                                {"model_forward": (t1 - t0) * 1000, "model_generate": (t2 - t1) * 1000}, scores)
 
     def unload(self):
         """Free model memory (used while training runs)."""

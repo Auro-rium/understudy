@@ -88,3 +88,13 @@ def test_ring_buffer_bounded_and_window_stats():
         w.add(v)
     s = w.stats()
     assert s["count"] == 4 and s["mean_ms"] == 25.0 and s["p50_ms"] == 30 and s["max_ms"] == 40
+
+
+def test_classify_log_carries_logits_and_probs():
+    t = Telemetry()
+    res = {"id": 1, "category": "A", "priority": "P2", "source": "local", "model_version": "m",
+           "confidence": 0.9, "cost_usd": 0.0}
+    t.observe_classify(res, 0.5, {"classify_total": 5.0}, "hi", {"A": 3.0, "B": 0.0})
+    f = t.logs(kind="classify")["records"][-1]["fields"]
+    assert f["logits"] == {"A": 3.0, "B": 0.0}
+    assert abs(sum(f["probs"].values()) - 1) < 1e-3 and f["probs"]["A"] > 0.95

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import collections
 import logging
+import math
 import os
 import resource
 import subprocess
@@ -84,7 +85,7 @@ def _now_iso() -> str:
 
 
 def _fmt_fields(fields: dict) -> str:
-    return " ".join(f"{k}={v}" for k, v in fields.items() if v is not None and k != "text")
+    return " ".join(f"{k}={v}" for k, v in fields.items() if v is not None and k not in ("text", "logits", "probs"))
 
 
 class Telemetry:
@@ -161,13 +162,20 @@ class Telemetry:
             self.log("info", "http", f"{method} {path}", **f)
 
     # ------------------------------------------------------------ classify / teacher / events
-    def observe_classify(self, result: dict, threshold: float, stages: dict, text: str):
+    def observe_classify(self, result: dict, threshold: float, stages: dict, text: str, logits: Optional[dict] = None):
         with self._lock:
             self.sources[result["source"]] += 1
             self.cls_times.append(time.time())
             for k, v in stages.items():
                 if v is not None and k in self.stages:
                     self.stages[k].add(v)
+        probs = None
+        if logits:  # same softmax-over-A-H the router gates on: shows exactly how confidence was formed
+            m = max(logits.values())
+            ex = {k: math.exp(v - m) for k, v in logits.items()}
+            z = sum(ex.values())
+            probs = {k: round(v / z, 4) for k, v in ex.items()}
+            logits = {k: round(v, 3) for k, v in logits.items()}
         level = "info" if result["source"] == "local" else "warning" if result["source"] == "review" else "info"
         self.log(level, "classify",
                  f"#{result['id']} {result['category']} {result['priority']} -> {result['source']}",
@@ -175,7 +183,7 @@ class Telemetry:
                  cost=round(result["cost_usd"], 6) if result["cost_usd"] else None,
                  total_ms=round(stages.get("classify_total") or 0, 1),
                  forward_ms=_r(stages.get("model_forward")), generate_ms=_r(stages.get("model_generate")),
-                 teacher_ms=_r(stages.get("teacher")), text=" ".join(text.split())[:100])
+                 teacher_ms=_r(stages.get("teacher")), logits=logits, probs=probs, text=" ".join(text.split())[:100])
 
     def observe_teacher(self, outcome: str, ms: float, tokens_in: int = 0, tokens_out: int = 0,
                         cost: float = 0.0, error: Optional[str] = None):

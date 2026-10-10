@@ -190,7 +190,7 @@ class Router:
             stages["db_write"] = (time.perf_counter() - td) * 1000
             stages["classify_total"] = (time.perf_counter() - t0) * 1000
             try:
-                tele.observe_classify(result, thr, stages, text)
+                tele.observe_classify(result, thr, stages, text, out.logits)
             except Exception:  # noqa: BLE001 - telemetry must never fail a ticket
                 pass
         if self.on_prediction:

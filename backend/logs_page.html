@@ -54,6 +54,13 @@
   .row .t { color: var(--muted); } .row .kd { color: var(--accent); }
   .row .m { word-break: break-word; white-space: pre-wrap; }
   .row .f { color: var(--muted); }
+  .bars { display: flex; gap: 6px; align-items: flex-end; margin: 3px 0 4px; flex-wrap: wrap; }
+  .lb { display: grid; grid-template-rows: 34px auto auto auto; width: 46px; text-align: center; font-size: 10px; line-height: 1.25; }
+  .lb b { order: 3; color: var(--muted); font-weight: 600; } .lb.top b { color: var(--ok); }
+  .lb i { order: 1; display: block; align-self: end; width: 100%; background: var(--line); border-radius: 2px 2px 0 0; }
+  .lb.top i { background: var(--ok); }
+  .lb em { order: 2; font-style: normal; } .lb u { order: 4; text-decoration: none; color: var(--muted); }
+  .bnote { color: var(--muted); font-size: 10px; align-self: center; margin-left: 6px; }
   .row .q { color: var(--muted); font-style: italic; }
   .lv-debug .lv { color: var(--muted); } .lv-info .lv { color: var(--ok); }
   .lv-warning .lv { color: var(--warn); } .lv-error .lv { color: var(--err); } .lv-error { background: color-mix(in srgb, var(--err) 8%, transparent); }
@@ -157,14 +164,25 @@ function localTime(iso) {
   return isNaN(d) ? iso.slice(11, 23) : d.toLocaleTimeString([], { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
 }
 
+// Per-letter logits and softmax probabilities behind the confidence (confidence = prob of the chosen letter).
+function confBars(f) {
+  if (!f.probs || !f.logits) return "";
+  const best = Object.keys(f.probs).reduce((a, b) => (f.probs[a] >= f.probs[b] ? a : b));
+  const cells = Object.keys(f.probs).map((L) => {
+    const p = f.probs[L], pct = Math.max(1, Math.round(p * 100));
+    return `<span class="lb${L === best ? " top" : ""}"><b>${L}</b><i style="height:${pct}%"></i><em>${(p * 100).toFixed(1)}%</em><u>${f.logits[L].toFixed(2)}</u></span>`;
+  }).join("");
+  return `<span class="bars" title="softmax over the 8 category-letter logits; confidence = prob of the chosen letter (${esc(f.conf)}) vs threshold ${esc(f.thr)}">${cells}<span class="bnote">logit &rarr; prob &middot; conf ${esc(f.conf)} vs thr ${esc(f.thr)}</span></span>`;
+}
+
 function rowHtml(r) {
   const f = r.fields || {};
   let msg = esc(r.msg);
   if (r.kind === "classify") msg = msg.replace(/-&gt; (local|teacher|review)$/, (_, s) => `-&gt; <span class="src-${s}">${s}</span>`);
-  const fields = Object.entries(f).filter(([k]) => k !== "text").map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ");
+  const fields = Object.entries(f).filter(([k]) => !["text", "logits", "probs"].includes(k)).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ");
   const text = f.text ? `  <span class="q">“${esc(f.text)}”</span>` : "";
   return `<div class="row lv-${r.level}" title="${esc(JSON.stringify(r))}"><span class="t">${localTime(r.ts)}</span><span class="lv">${r.level}</span>` +
-         `<span class="kd">${esc(r.kind)}</span><span class="m">${msg}${fields ? `  <span class="f">${fields}</span>` : ""}${text}</span></div>`;
+         `<span class="kd">${esc(r.kind)}</span><span class="m">${msg}${fields ? `  <span class="f">${fields}</span>` : ""}${text}${confBars(f)}</span></div>`;
 }
 
 function visible(r) {
