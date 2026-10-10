@@ -41,6 +41,7 @@ def _ticket_out(d: dict) -> dict:
     d = dict(d)
     d.setdefault("category_name", CATEGORIES[d["category"]])
     d.setdefault("team", TEAMS[d["category"]])
+    d.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="milliseconds"))  # SSE payloads
     return d
 
 
