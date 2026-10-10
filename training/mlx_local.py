@@ -28,8 +28,23 @@ _VAL_NEW = re.compile(r"^\s*(\d+)\s+val\s+([0-9.]+)")
 _TRAIN_NEW = re.compile(r"^\s*(\d+)\s+([0-9]+\.[0-9]+)\s*[▼▲]")
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
 def parse_loss_line(line: str) -> Optional[dict]:
-    """-> {'kind': 'train'|'val', 'step': int, 'loss': float} or None."""
+    """-> {'kind': 'train'|'val', 'step': int, 'loss': float} or None.
+
+    mlx_lm's rich UI emits ANSI colour codes and redraws with carriage returns, so strip
+    the codes and look at each \\r-separated segment (last match wins)."""
+    found = None
+    for seg in _ANSI.sub("", line).split("\r"):
+        r = _parse_plain(seg)
+        if r:
+            found = r
+    return found
+
+
+def _parse_plain(line: str) -> Optional[dict]:
     for rx, kind in ((_TRAIN_OLD, "train"), (_VAL_OLD, "val"), (_VAL_NEW, "val"), (_TRAIN_NEW, "train")):
         m = rx.search(line)
         if m:
@@ -105,7 +120,8 @@ class MlxLocalTrainer(Trainer):
                 "--iters", str(self._iters()), "--batch-size", "1",
                 "--num-layers", str(self.num_layers), "--max-seq-length", str(self.max_seq),
                 "--learning-rate", str(self.lr), "--steps-per-report", "10",
-                "--steps-per-eval", "50", "--save-every", "100", "--grad-checkpoint"]
+                "--steps-per-eval", "50", "--save-every", "100", "--grad-checkpoint",
+                "--mask-prompt"]  # loss on the answer tokens only; prompt+ticket dominate otherwise
 
     def train(self, round: int, data_dir: str, on_progress: Optional[ProgressFn] = None) -> TrainResult:
         adapter = self.adapters_dir / f"round_{round}"
