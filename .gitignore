@@ -1,5 +1,19 @@
 .venv/
 .venv-webui/
+backend/.venv/
 .webui_secret_key
-data/
 logs/
+# Open WebUI runtime state (shares the data/ dir with dataset code)
+data/cache/
+data/uploads/
+data/vector_db/
+data/webui.db*
+# secrets and generated artifacts
+.env
+*.sqlite
+*.db
+adapters/
+data/.teacher_cache/
+__pycache__/
+*.pyc
+.claude/worktrees/
