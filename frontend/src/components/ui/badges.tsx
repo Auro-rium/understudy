@@ -28,7 +28,7 @@ export function ProvisionalBadge({ className }: { className?: string }) {
         "inline-flex items-center rounded-md border border-dashed border-spot/70 px-2 py-0.5 text-sm font-medium text-spot",
         className,
       )}
-      title="Evaluation set is small; treat these numbers as provisional."
+      title="Provisional: the backend marked this evaluation as not final."
     >
       Provisional
     </span>
