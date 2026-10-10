@@ -109,6 +109,19 @@ The store subscribes to `GET /api/events` (SSE). Events can be sent as `{type, d
 | `/training` | The rounds so far; with the backend up, run a round and watch collect, train, evaluate, promote |
 | `/results` | Base vs trained rounds: accuracy, speed, cost, per-category F1, confusion, provisional flag |
 
+### Screenshots
+
+Captured from the production build with no backend running, so they show the bundled snapshot (hence the SNAPSHOT badge), at 1920x1080 and 390x844. They are in `docs/screenshots/`.
+
+| File | Shows |
+| --- | --- |
+| `landing.png` | Landing page |
+| `live.png`, `mobile-live.png` | `/live` in the empty snapshot state (controls disabled with an explanation) |
+| `training.png`, `training-rounds.png` | `/training`: macro-F1 across rounds, per-round cards with loss curves |
+| `results-table.png` | `/results`: model comparison table with promoted and rejected rounds |
+| `results-confusion.png` | `/results`: per-category F1 and the confusion heatmap |
+| `mobile-results.png` | `/results` at phone width |
+
 Shared code: `src/lib/` (types, API, events, store, snapshot, categories, format), `src/components/ui/` (primitives), `src/components/shell/` (nav, banners), `src/components/landing/`.
 
 ## Offline (Wi-Fi off) demo
