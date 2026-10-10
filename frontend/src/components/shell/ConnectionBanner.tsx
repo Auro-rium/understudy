@@ -29,6 +29,7 @@ export function ConnectionBanner() {
   return (
     <div
       role="status"
+      data-banner
       className={cx(
         "border-b px-4 py-1.5 text-center text-base sm:px-8",
         tone === "amber" && "border-spot/40 bg-spot/10 text-spot",

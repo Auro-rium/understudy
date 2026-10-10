@@ -86,7 +86,7 @@ export function ShareChart() {
     const by = new Map<string, MarkerGroup>();
     for (const m of state.roundMarkers) {
       if (!inWindow.has(m.at)) continue;
-      const label = m.promoted ? m.version : `${m.version.replace(/-rejected$/, "")} rejected`;
+      const label = m.promoted ? m.version : "gate rejected";
       const g = by.get(m.at);
       if (g) {
         g.text = `${g.text} · ${label}`;

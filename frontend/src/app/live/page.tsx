@@ -15,7 +15,7 @@ export default function LivePage() {
   const { round, dismiss } = useRoundHighlight();
 
   return (
-    <div className="stage-glow 2xl:flex 2xl:h-[calc(100dvh-4.1rem)] 2xl:min-h-[46rem] 2xl:flex-col">
+    <div className="stage-glow 2xl:flex 2xl:h-[calc(100dvh-4.1rem)] 2xl:[body:has([data-banner])_&]:h-[calc(100dvh-6.5rem)] 2xl:min-h-[46rem] 2xl:flex-col">
       <div className="mx-auto flex w-full max-w-[120rem] flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-8 sm:py-8 2xl:min-h-0 2xl:flex-1 2xl:gap-4 2xl:py-4">
         <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="display text-4xl font-semibold leading-none sm:text-5xl 2xl:text-4xl">Live</h1>
