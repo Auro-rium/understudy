@@ -34,7 +34,7 @@ One page for the presenter. Read the numbers off the screen; do not quote figure
 1. Say what you are about to do before you do it.
 2. Turn Wi-Fi off from the menu bar and let the audience see the icon.
 3. Toggle **force offline** on `/live` (this is the backend's offline mode, which disables the teacher).
-4. The app should keep running: the page, the API and SSE are all on this machine. Expect no banner, or at most the polling banner.
+4. The app should keep running: the page, the API and SSE are all on this machine. An amber banner ("Offline mode: uncertain tickets go to the human review queue") appears under the header and the badge flips to **Offline**; that is the backend's offline mode, not a connection error. A grey polling banner would be the only connection warning to expect.
 5. When done, turn force offline off and Wi-Fi back on.
 
 Open WebUI (:3000) also keeps working offline; use it for the base vs trained side-by-side only if the backend serves both models there (see README).

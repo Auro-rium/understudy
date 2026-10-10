@@ -34,6 +34,8 @@ npm run dev -- -p 3001
 
 Use the production build (`npm start`) for the actual demo: it is faster and has no dev overlay.
 
+Screenshots of every screen (1920x1080, mock data) are in [`docs/screenshots/`](docs/screenshots/).
+
 ## Environment variables
 
 Set in `.env.local` (copy from `.env.example`). `NEXT_PUBLIC_*` values are **baked in at build time**, so rebuild after changing them.
