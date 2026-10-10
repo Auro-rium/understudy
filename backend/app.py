@@ -266,8 +266,11 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
     demo_api.install(app, ctx, events)
     telemetry.install(app, ctx)
 
+    job_rounds: dict = {}  # job_id -> round number (round_failed events do not carry it)
+
     def _log_round_event(e: dict, job_id: str):
-        t, rnd, tele = e.get("type"), e.get("round"), ctx.telemetry
+        t, tele = e.get("type"), ctx.telemetry
+        rnd = job_rounds.setdefault(job_id, e.get("round")) if e.get("round") is not None else job_rounds.get(job_id, "?")
         if t == "round_start":
             tele.log("info", "train", f"round {rnd}: collecting", job_id=job_id, examples=e.get("examples"))
         elif t == "train_progress":
