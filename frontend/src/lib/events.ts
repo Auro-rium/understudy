@@ -1,6 +1,6 @@
 /**
  * Live event feed: SSE from GET /api/events, falling back to 2s polling when the
- * stream is unavailable. Every payload is normalised. In "snapshot" data-source mode
+ * stream is unavailable or silent (see the watchdog in connect()). Every payload is normalised. In "snapshot" data-source mode
  * subscribe() does nothing (zero API calls).
  */
 
@@ -16,6 +16,9 @@ const POLL_MS = 2000;
 const MAX_BACKOFF_MS = 15000;
 const POLL_TICKETS = 30;
 const SEEN_CAP = 500;
+const WATCHDOG_MS = 5000; // an opened stream must deliver a message within this
+const IDLE_RECONNECT_MS = 40000; // quiet this long on an established stream: reopen it
+const SILENT_RETRY_MS = 60000; // after a silent stream, retry SSE this rarely (keeps the UI from flapping)
 
 function isEnvelope(v: unknown): v is { type: string; data: unknown } {
   if (typeof v !== "object" || v === null) return false;
@@ -108,9 +111,9 @@ export function subscribe(
       }
       const maxRound = rounds.reduce((m, r) => Math.max(m, r.round), 0);
 
+      // tickets arrive newest first; emit oldest first. Also on the first poll: the store drops ids it already has.
+      for (const t of fresh.slice().reverse()) onEvent({ type: "prediction", data: t });
       if (seeded) {
-        // tickets arrive newest first; emit oldest first
-        for (const t of fresh.slice().reverse()) onEvent({ type: "prediction", data: t });
         if (lastMode !== null && health.mode !== lastMode) {
           onEvent({ type: "mode", data: { mode: health.mode } });
         }
@@ -150,8 +153,23 @@ export function subscribe(
     pollTimer = null;
   };
 
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** true after a connection opened but never delivered a message (e.g. a proxy that buffers the stream) */
+  let silentMode = false;
+
+  const clearWatchdog = (): void => {
+    if (watchdogTimer) clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  };
+  const clearIdle = (): void => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+  };
+
   const connect = (): void => {
     if (closed) return;
+    retryTimer = null;
     let source: EventSource;
     try {
       source = new EventSource(`${getApiUrl()}/api/events`);
@@ -162,27 +180,68 @@ export function subscribe(
       return;
     }
     es = source;
-    source.onopen = () => {
-      backoff = 1000;
-      stopPolling();
-      setStatus("sse");
+    let alive = false; // true once any message (data or named event) arrived on this connection
+
+    const drop = (): void => {
+      source.close();
+      if (es === source) es = null;
+      clearWatchdog();
+      clearIdle();
     };
+
+    // Healthy streams send an `event: mode` straight away. Idle ones only send comment pings, which
+    // EventSource never surfaces, so after IDLE_RECONNECT_MS of quiet we quietly reopen instead of
+    // declaring the stream dead; the new connection must again prove itself within WATCHDOG_MS.
+    const armIdle = (): void => {
+      clearIdle();
+      idleTimer = setTimeout(() => {
+        if (closed || es !== source) return;
+        drop();
+        connect();
+      }, IDLE_RECONNECT_MS);
+    };
+
+    const touch = (): void => {
+      if (closed || es !== source) return;
+      if (!alive) {
+        alive = true;
+        clearWatchdog();
+        silentMode = false;
+        backoff = 1000;
+        stopPolling();
+        setStatus("sse");
+      }
+      armIdle();
+    };
+
+    // Some proxies (Cloudflare quick tunnels) answer 200 and fire `open` but never deliver a byte.
+    // No message within WATCHDOG_MS: give up on this stream, poll every 2 s, retry SSE only rarely.
+    watchdogTimer = setTimeout(() => {
+      if (closed || es !== source || alive) return;
+      drop();
+      silentMode = true;
+      startPolling();
+      retryTimer = setTimeout(connect, SILENT_RETRY_MS);
+    }, WATCHDOG_MS);
+
     source.onmessage = (m: MessageEvent<string>) => {
+      touch();
       const ev = parseEvent(m.data);
       if (ev) onEvent(ev);
     };
     for (const type of EVENT_TYPES) {
       source.addEventListener(type, (m) => {
+        touch();
         const ev = parseEvent((m as MessageEvent<string>).data, type);
         if (ev) onEvent(ev);
       });
     }
     source.onerror = () => {
-      source.close();
-      if (es === source) es = null;
-      if (closed) return;
+      const current = es === source;
+      drop();
+      if (closed || !current) return;
       startPolling();
-      retryTimer = setTimeout(connect, backoff);
+      retryTimer = setTimeout(connect, silentMode ? SILENT_RETRY_MS : backoff);
       backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
     };
   };
@@ -193,6 +252,8 @@ export function subscribe(
     closed = true;
     if (es) es.close();
     es = null;
+    clearWatchdog();
+    clearIdle();
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
     stopPolling();

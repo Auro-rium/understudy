@@ -120,6 +120,8 @@ Event types:
 | any other type | ignored | unknown event types are tolerated; they never break the stream |
 | `train_progress` with `error` | same shape plus `error: "<message>"` | a failed round shows inline in the training UI. There is no separate `round_failed` event type; unknown types are ignored. |
 
+**Watchdog (buffering proxies):** Cloudflare quick tunnels can answer `200` and fire `open` but never deliver a body byte. If no message (data or named event) arrives within 5 s of connecting, the frontend closes the stream and polls every 2 s (banner "Realtime stream unavailable - updating every 2 seconds"), retrying SSE only every 60 s so the banner does not flap. Comment pings (`: ping`) are invisible to `EventSource`, so on an established stream that has been quiet for 40 s the frontend silently reopens it; the immediate `event: mode` on connect is what proves the stream is healthy. Keep sending that event on every connect.
+
 Send an initial comment or event soon after connect so `onopen` fires, and `Cache-Control: no-cache`, `Content-Type: text/event-stream`. Disable proxy buffering. Cloudflared passes SSE through.
 
 ## 4. Behaviour the UI expects
