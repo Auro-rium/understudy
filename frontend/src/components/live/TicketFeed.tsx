@@ -29,7 +29,7 @@ function FeedRow({ ticket, animateIn }: { ticket: Ticket; animateIn: boolean }) 
     >
       <div className="min-w-0">
         <p className="line-clamp-2 text-lg leading-snug text-ink">{ticket.text}</p>
-        <p className="num mt-0.5 text-sm text-ink-3">{fmtTime(ticket.created_at)}</p>
+        <p className="num mt-0.5 text-base text-ink-3">{fmtTime(ticket.created_at)}</p>
       </div>
       <div className="min-w-0">
         <p className="truncate text-lg font-medium text-ink">{ticket.category_name}</p>
@@ -61,7 +61,7 @@ function FeedList({ tickets }: { tickets: Ticket[] }) {
     <div>
       <div
         aria-hidden
-        className={cx("hidden gap-x-4 border-b border-line-strong px-4 pb-2 text-sm text-ink-3 md:grid", COLS)}
+        className={cx("hidden gap-x-4 border-b border-line-strong px-4 pb-2 text-base text-ink-3 md:grid", COLS)}
       >
         <span>Ticket</span>
         <span>Category / team</span>
@@ -94,7 +94,7 @@ export function TicketFeed() {
   const tickets = state.tickets.slice(0, VISIBLE);
 
   return (
-    <Card className="p-0 sm:p-0">
+    <Card className="p-0 sm:p-0 2xl:flex 2xl:h-full 2xl:min-h-0 2xl:flex-col">
       <header className="flex items-baseline justify-between gap-3 px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
         <h2 className="text-xl font-semibold text-ink">Live ticket feed</h2>
         <span className="flex items-center gap-4">
@@ -107,7 +107,7 @@ export function TicketFeed() {
           ) : null}
         </span>
       </header>
-      <div className="pb-2">
+      <div className="pb-2 2xl:min-h-0 2xl:flex-1 2xl:overflow-hidden 2xl:[mask-image:linear-gradient(to_bottom,black_calc(100%-3.5rem),transparent)]">
         {state.loaded ? (
           <FeedList tickets={tickets} />
         ) : (

@@ -22,7 +22,7 @@ const btn =
 function Group({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={cx("flex min-w-0 flex-col gap-2", className)}>
-      <p className="text-sm font-medium uppercase tracking-wider text-ink-3">{label}</p>
+      <p className="text-base font-medium uppercase tracking-wider text-ink-3">{label}</p>
       {children}
     </div>
   );
@@ -140,6 +140,7 @@ export function ControlsBar() {
 
         {/* offline */}
         <Group label="Connectivity">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <button
             type="button"
             role="switch"
@@ -170,9 +171,10 @@ export function ControlsBar() {
               />
             </span>
           </button>
-          <p className={cx("text-base", offline ? "text-spot" : "text-ink-3")}>
-            {offline ? "Offline: unsure tickets go to review" : "Online: teacher available"}
+          <p className={cx("max-w-[11rem] text-base leading-snug", offline ? "text-spot" : "text-ink-3")}>
+            {offline ? "Unsure tickets go to review" : "Teacher available"}
           </p>
+          </div>
         </Group>
 
         {/* review */}

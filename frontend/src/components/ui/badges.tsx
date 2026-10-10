@@ -11,7 +11,7 @@ export function MockBadge({ className }: { className?: string }) {
   return (
     <span
       className={cx(
-        "inline-flex items-center rounded-md border border-spot bg-spot/10 px-2 py-0.5 text-sm font-bold tracking-wide text-spot",
+        "inline-flex items-center rounded-md border border-spot bg-spot/10 px-2 py-0.5 text-base font-bold tracking-wide text-spot",
         className,
       )}
       title="The backend isn't providing these numbers; they are seeded sample data."
@@ -25,7 +25,7 @@ export function ProvisionalBadge({ className }: { className?: string }) {
   return (
     <span
       className={cx(
-        "inline-flex items-center rounded-md border border-dashed border-spot/70 px-2 py-0.5 text-sm font-medium text-spot",
+        "inline-flex items-center rounded-md border border-dashed border-spot/70 px-2 py-0.5 text-base font-medium text-spot",
         className,
       )}
       title="Provisional: the backend marked this evaluation as not final."
@@ -40,7 +40,7 @@ export function ModeBadge({ mode, className }: { mode: Mode; className?: string 
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-0.5 text-sm font-medium leading-6",
+        "inline-flex items-center gap-2 rounded-full border px-3 py-0.5 text-base font-medium leading-6",
         online ? "border-good/50 text-good" : "border-spot/60 bg-spot/10 text-spot",
         className,
       )}

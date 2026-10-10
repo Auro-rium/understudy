@@ -18,10 +18,10 @@ export function NavBar() {
 
   return (
     <header className="border-b border-line bg-bg/90 backdrop-blur">
-      <div className="mx-auto flex max-w-[110rem] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-8">
+      <div className="mx-auto flex max-w-[120rem] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-8">
         <Link href="/" className="flex items-baseline gap-2" aria-label="Understudy home">
           <span className="display text-2xl font-semibold tracking-tight text-ink">Understudy</span>
-          <span className="text-sm text-ink-3">e/acc</span>
+          <span className="text-base text-ink-3">e/acc</span>
         </Link>
 
         <nav aria-label="Primary" className="-mx-1 order-3 w-full overflow-x-auto sm:order-none sm:w-auto">

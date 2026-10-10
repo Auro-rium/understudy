@@ -8,7 +8,7 @@ import { cx } from "@/components/ui";
 export function RoundBanner({ round, onDismiss }: { round: LastRound | null; onDismiss: () => void }) {
   const reduce = useReducedMotion();
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-24 z-40 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 top-3 z-40 sm:top-28 flex justify-center px-4">
       <AnimatePresence>
         {round ? <BannerCard key={round.at} round={round} onDismiss={onDismiss} reduce={!!reduce} /> : null}
       </AnimatePresence>
@@ -55,7 +55,7 @@ function BannerCard({
       <h2 className="display mt-1 pr-12 text-[clamp(1.75rem,1.2rem+2vw,2.75rem)] font-semibold leading-tight text-ink">
         {promoted
           ? `New model ${lr.round.model_version} live`
-          : `${lr.round.model_version} — blocked by the evaluation gate`}
+          : "Candidate model blocked by the evaluation gate"}
       </h2>
 
       {promoted ? (

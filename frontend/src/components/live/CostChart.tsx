@@ -39,30 +39,40 @@ function EndLabels({ last, saved }: { last: Row; saved: number }) {
   if (!a || !c || !plot) return null;
 
   const wide = plot.width > 300;
+  if (!wide) {
+    const gapPx = a.y - c.y;
+    const savedY = gapPx > 26 ? (a.y + c.y) / 2 + 5 : c.y - 12;
+    return (
+      <g pointerEvents="none">
+        <text x={a.x - 12} y={savedY} textAnchor="end" fontSize={17} fontWeight={700} fill="var(--text)" {...halo}>
+          {`Saved ${fmtUsd(saved)}`}
+        </text>
+      </g>
+    );
+  }
+
+  // Three stacked labels in the right margin: cloud-only (top), saved (middle), actual (bottom),
+  // each at least 22px apart so nothing overlaps and no label sits on a line.
+  const STEP = 22;
+  const mid = (a.y + c.y) / 2;
   let yCloud = c.y;
   let yActual = a.y;
-  if (yActual - yCloud < 22) {
-    const mid = (yActual + yCloud) / 2;
-    yCloud = mid - 11;
-    yActual = mid + 11;
+  let ySaved = mid;
+  if (yActual - yCloud < STEP * 2) {
+    yCloud = mid - STEP;
+    yActual = mid + STEP;
   }
-  const gapPx = a.y - c.y;
-  const savedY = gapPx > 26 ? (a.y + c.y) / 2 + 5 : c.y - 12;
-
+  ySaved = (yCloud + yActual) / 2;
   return (
     <g pointerEvents="none">
-      {wide ? (
-        <>
-          <text x={c.x + 10} y={yCloud + 5} fontSize={15} fontWeight={600} fill="var(--text)" {...halo}>
-            {`Cloud-only ${fmtUsd(last.cloud)}`}
-          </text>
-          <text x={a.x + 10} y={yActual + 5} fontSize={15} fontWeight={600} fill="var(--text)" {...halo}>
-            {`Actual ${fmtUsd(last.actual)}`}
-          </text>
-        </>
-      ) : null}
-      <text x={a.x - 12} y={savedY} textAnchor="end" fontSize={17} fontWeight={700} fill="var(--text)" {...halo}>
+      <text x={c.x + 10} y={yCloud + 5} fontSize={16} fontWeight={600} fill="var(--text)" {...halo}>
+        {`Cloud-only ${fmtUsd(last.cloud)}`}
+      </text>
+      <text x={c.x + 10} y={ySaved + 5} fontSize={16} fontWeight={700} fill="var(--good)" {...halo}>
         {`Saved ${fmtUsd(saved)}`}
+      </text>
+      <text x={a.x + 10} y={yActual + 5} fontSize={16} fontWeight={600} fill="var(--text)" {...halo}>
+        {`Actual ${fmtUsd(last.actual)}`}
       </text>
     </g>
   );
@@ -103,8 +113,8 @@ export function CostChart() {
   const last = data[data.length - 1];
 
   return (
-    <Card title="Cost: actual vs cloud-only">
-      <p className="-mt-2 mb-3 text-base text-ink-3">
+    <Card title="Cost: actual vs cloud-only" className="2xl:flex 2xl:min-h-0 2xl:flex-col">
+      <p className="-mt-2 mb-3 text-base text-ink-3 2xl:hidden">
         Cumulative spend. The green gap is what the local model saved.
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1" aria-label="Legend">
@@ -115,14 +125,14 @@ export function CostChart() {
       {data.length < 2 || !last ? (
         <EmptyState title="No cost data yet" hint="Costs accumulate as tickets are routed." />
       ) : (
-        <div className="h-72 w-full sm:h-80" role="img" aria-label="Cumulative actual cost versus cloud-only cost">
+        <div className="h-72 w-full sm:h-80 2xl:h-auto 2xl:min-h-48 2xl:flex-1" role="img" aria-label="Cumulative actual cost versus cloud-only cost">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data} margin={{ top: 8, right: roomy ? 150 : 12, bottom: 0, left: 0 }}>
+            <ComposedChart data={data} margin={{ top: 8, right: roomy ? 164 : 12, bottom: 0, left: 0 }}>
               <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 4" />
               <XAxis
                 dataKey="t"
                 tickFormatter={axisTime}
-                tick={{ fontSize: 14, fill: "var(--text-3)" }}
+                tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={{ stroke: "var(--line-strong)" }}
                 minTickGap={64}
@@ -131,7 +141,7 @@ export function CostChart() {
                 domain={[0, "auto"]}
                 tickCount={5}
                 tickFormatter={(v: number) => fmtUsd(v)}
-                tick={{ fontSize: 14, fill: "var(--text-3)" }}
+                tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={false}
                 width={64}

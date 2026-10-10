@@ -45,7 +45,7 @@ function MarkerLabel({
       x={flip ? x - 8 : x + 8}
       y={y}
       textAnchor={flip ? "end" : "start"}
-      fontSize={15}
+      fontSize={16}
       fontWeight={600}
       fill={rejected ? "var(--spot)" : "var(--text-2)"}
       stroke="var(--surface)"
@@ -102,6 +102,7 @@ export function ShareChart() {
 
   return (
     <Card
+      className="2xl:flex 2xl:min-h-0 2xl:flex-col"
       title="Local share over time"
       action={
         latest ? (
@@ -110,12 +111,13 @@ export function ShareChart() {
       }
     >
       <p className="-mt-2 mb-3 text-base text-ink-3">
-        Share of tickets the local model handled itself. Dashed lines mark training rounds.
+        <span className="2xl:hidden">Share of tickets the local model handled itself. </span>
+        Dashed lines mark training rounds.
       </p>
       {data.length < 2 ? (
         <EmptyState title="No history yet" hint="The line draws itself once tickets start flowing." />
       ) : (
-        <div className="h-72 w-full sm:h-80" role="img" aria-label="Line chart of local share over time">
+        <div className="h-72 w-full sm:h-80 2xl:h-auto 2xl:min-h-48 2xl:flex-1" role="img" aria-label="Line chart of local share over time">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
               <defs>
@@ -128,7 +130,7 @@ export function ShareChart() {
               <XAxis
                 dataKey="t"
                 tickFormatter={axisTime}
-                tick={{ fontSize: 14, fill: "var(--text-3)" }}
+                tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={{ stroke: "var(--line-strong)" }}
                 minTickGap={64}
@@ -137,7 +139,7 @@ export function ShareChart() {
                 domain={[0, 1]}
                 ticks={[0, 0.25, 0.5, 0.75, 1]}
                 tickFormatter={(v: number) => fmtPct(v)}
-                tick={{ fontSize: 14, fill: "var(--text-3)" }}
+                tick={{ fontSize: 16, fill: "var(--text-3)" }}
                 tickLine={false}
                 axisLine={false}
                 width={48}

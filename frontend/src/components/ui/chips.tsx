@@ -13,7 +13,7 @@ export function SourceChip({ source, className }: { source: Source; className?: 
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm font-medium leading-6",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-base font-medium leading-6",
         s.ring,
         s.text,
         className,
@@ -38,7 +38,7 @@ export function PriorityChip({ priority, className }: { priority: string; classN
   return (
     <span
       className={cx(
-        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-sm font-medium leading-6",
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-base font-medium leading-6",
         PRIORITY[key] ?? PRIORITY.medium,
         className,
       )}
@@ -75,7 +75,7 @@ export function ConfidenceBar({
           style={{ width: `${v * 100}%` }}
         />
       </div>
-      <span className="num w-10 text-right text-sm text-ink-2">{fmtPct(v)}</span>
+      <span className="num w-10 text-right text-base text-ink-2">{fmtPct(v)}</span>
     </div>
   );
 }
@@ -84,7 +84,7 @@ export function VersionChip({ version, className }: { version: string; className
   return (
     <span
       className={cx(
-        "inline-flex items-center rounded-md border border-line-strong bg-surface-2 px-2 py-0.5 font-mono text-sm text-ink",
+        "inline-flex items-center rounded-md border border-line-strong bg-surface-2 px-2 py-0.5 font-mono text-base text-ink",
         className,
       )}
       title="Model version being served"

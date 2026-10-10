@@ -7,13 +7,14 @@ interface StatTileProps {
   sub?: ReactNode;
   accent?: Accent;
   className?: string;
+  valueClassName?: string;
 }
 
 /**
  * Projector-scale stat. Left rule carries the accent; the number is the
  * loudest thing in the tile. Not a card: no fill, just structure.
  */
-export function StatTile({ label, value, sub, accent, className }: StatTileProps) {
+export function StatTile({ label, value, sub, accent, className, valueClassName }: StatTileProps) {
   return (
     <div className={cx("relative pl-5", className)}>
       <span
@@ -28,11 +29,12 @@ export function StatTile({ label, value, sub, accent, className }: StatTileProps
         className={cx(
           "num display text-[clamp(3rem,2rem+4.5vw,6rem)] font-semibold leading-[1.02]",
           accent ? accentText[accent] : "text-ink",
+          valueClassName,
         )}
       >
         {value}
       </p>
-      {sub ? <p className="mt-1 text-base text-ink-3">{sub}</p> : null}
+      {sub ? <p className="mt-1 text-lg text-ink-3">{sub}</p> : null}
     </div>
   );
 }
