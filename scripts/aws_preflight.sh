@@ -3,6 +3,8 @@
 # Prints OK/BLOCKED per requirement; exit 0 only when everything needed is allowed.
 # Usage: scripts/aws_preflight.sh [region]   (default us-east-1)
 set -uo pipefail
+aws() { command aws --cli-read-timeout 20 --cli-connect-timeout 10 "$@"; }   # never hang
+quota_ok() { local v; v="$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --region "$REGION" --query Quota.Value --output text)" || return 1; awk "BEGIN{exit !($v>=8)}"; }
 REGION="${1:-${AWS_REGION:-us-east-1}}"
 ITYPE="${INSTANCE_TYPE:-g5.2xlarge}"
 USER_ARN="$(aws sts get-caller-identity --query Arn --output text)"
@@ -24,8 +26,7 @@ check() {  # check "label" cmd...   OK if exit 0, or if a --dry-run call answers
 }
 
 echo "principal: $USER_ARN   region: $REGION   instance: $ITYPE"
-check "GPU quota (EC2 G/VT vCPUs >= 8)" bash -c \
-  "v=\$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --region $REGION --query Quota.Value --output text); awk \"BEGIN{exit !(\$v>=8)}\""
+check "GPU quota (EC2 G/VT vCPUs >= 8)" quota_ok
 check "ec2:DescribeInstances"            aws ec2 describe-instances --region "$REGION" --max-items 1
 check "ec2:DescribeInstanceTypeOfferings" aws ec2 describe-instance-type-offerings --region "$REGION" --filters "Name=instance-type,Values=$ITYPE" --max-items 1
 check "ec2:DescribeImages"               aws ec2 describe-images --region "$REGION" --owners amazon --max-items 1
@@ -46,5 +47,5 @@ for act in s3:CreateBucket s3:PutObject s3:GetObject ssm:SendCommand ssm:StartSe
   if [[ "$d" == "allowed" ]]; then echo "OK       $act (simulated)"; else fail=1; echo "BLOCKED  $act (simulated: $d)"; fi
 done
 
-if [[ $fail -eq 0 ]]; then echo "ALL CLEAR: EC2 training route is open."; else echo "NOT READY: ask the org admin to lift SCP p-e6tm3tr2 (see docs/aws_route_a.md)."; fi
+if [[ $fail -eq 0 ]]; then echo "ALL CLEAR: EC2 training route is open."; else echo "NOT READY: see BLOCKED lines above (quota pending, or an SCP/IAM deny; see docs/aws_route_a.md)."; fi
 exit $fail
