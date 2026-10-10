@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Understudy: the local model that learns from its teacher</title>
+<meta name="description" content="Understudy routes support tickets to a small local model and asks a cloud teacher only when unsure. Every teacher answer trains the local model, behind a macro-F1 promotion gate.">
+<meta name="theme-color" content="#0b0d14">
+<style>
+:root{
+  --bg:#0b0d14;--surface:#12151f;--surface-2:#181c29;--surface-3:#202536;--line:#262b3b;--line-strong:#353c52;
+  --text:#f2f0ea;--text-2:#bcc0d0;--text-3:#8d92a8;
+  --local:#3987e5;--teacher:#d95926;--review:#9085e9;--save:#199e70;--spot:#f2c14e;--bad:#e66767;--good:#3fb68b;
+  --display:ui-serif,"New York","Iowan Old Style",Charter,Georgia,serif;
+  --body:system-ui,-apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 19px/1.6 var(--body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--local);text-underline-offset:3px}a:focus-visible,button:focus-visible,video:focus-visible{outline:2px solid var(--spot);outline-offset:3px;border-radius:4px}
+h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.02em;line-height:1.05;margin:0}
+h2{font-size:clamp(2.2rem,5vw,3.6rem)}h3{font-size:1.5rem;line-height:1.2}
+p{margin:0 0 1em;color:var(--text-2)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+.wrap{max-width:1160px;margin:0 auto;padding:0 16px}
+section{padding:clamp(72px,11vw,140px) 0;position:relative}
+.eyebrow{font:600 .8rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--spot);margin-bottom:18px;display:flex;gap:10px;align-items:center}
+.eyebrow:before{content:"";width:28px;height:1px;background:var(--spot)}
+.lede{font-size:clamp(1.15rem,2vw,1.4rem);max-width:760px;color:var(--text-2)}
+.sub{margin-top:18px}
+.local{color:var(--local)}.teacher{color:var(--teacher)}.review{color:var(--review)}.save{color:var(--save)}
+
+/* nav */
+nav{position:fixed;inset:0 0 auto 0;z-index:50;background:rgba(11,13,20,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:22px;height:56px}
+nav b{font-family:var(--display);font-size:1.25rem;letter-spacing:-.01em;margin-right:auto}
+nav a{color:var(--text-2);text-decoration:none;font-size:.9rem}nav a:hover{color:var(--text)}
+#bar{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:linear-gradient(90deg,var(--local),var(--spot),var(--teacher))}
+@media(max-width:820px){nav a.hide{display:none}}
+
+/* hero */
+.hero{padding:clamp(120px,16vw,190px) 0 40px;background:radial-gradient(900px 520px at 70% 8%,rgba(57,135,229,.20),transparent 60%),radial-gradient(700px 420px at 8% 30%,rgba(217,89,38,.12),transparent 60%)}
+.hero h1{font-size:clamp(3.4rem,10vw,8rem);line-height:.92}
+.hero h1 em{font-style:italic;color:var(--spot)}
+.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line-strong);border-radius:99px;padding:6px 14px;font:.82rem var(--mono);color:var(--text-2);background:var(--surface)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 var(--good);animation:ping 2s infinite}
+@keyframes ping{70%{box-shadow:0 0 0 10px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
+.btn{display:inline-flex;align-items:center;min-height:48px;padding:0 22px;border-radius:10px;font-weight:600;text-decoration:none;border:1px solid var(--line-strong);color:var(--text);background:var(--surface-2)}
+.btn.primary{background:var(--local);border-color:var(--local);color:#fff}.btn:hover{filter:brightness(1.15)}
+.router{margin-top:56px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,var(--surface),var(--bg));padding:16px;overflow:hidden}
+.router{overflow-x:auto}.router svg{display:block;width:100%;min-width:700px;height:auto}.stats{min-width:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
+.stat{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--surface)}
+.stat b{display:block;font:600 2rem/1.1 var(--display)}.stat span{font-size:.85rem;color:var(--text-3)}
+
+/* cards */
+.grid{display:grid;gap:16px;margin-top:40px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
+.card{border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:24px;position:relative;overflow:hidden;transition:border-color .3s,transform .3s}
+.card:hover{border-color:var(--line-strong);transform:translateY(-3px)}
+.card .n{font:600 .8rem var(--mono);color:var(--text-3);margin-bottom:14px;display:block}
+.card p{margin:10px 0 0;font-size:1rem}
+.card.bad{border-left:3px solid var(--bad)}
+.cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:36px}
+.cat{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--surface);font-size:1rem}
+.cat b{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--surface-3);font:700 1rem var(--mono);color:var(--spot)}
+
+/* loop */
+.loop{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0;margin-top:44px;counter-reset:s}
+.step{padding:26px;border:1px solid var(--line);background:var(--surface);position:relative;margin:-1px 0 0 -1px;counter-increment:s}
+.step:before{content:counter(s);position:absolute;right:20px;top:8px;font:700 4.5rem var(--display);color:var(--surface-3)}
+.step h3{position:relative}.step p{position:relative;font-size:1rem;margin-top:12px}
+.step .tag{font:600 .75rem var(--mono);letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:10px}
+.step.s1{border-top:3px solid var(--local)}.step.s2{border-top:3px solid var(--teacher)}.step.s3{border-top:3px solid var(--save)}.step.s4{border-top:3px solid var(--spot)}
+
+/* diagrams */
+.diagram{margin-top:40px;border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:14px;overflow-x:auto}
+.diagram svg{display:block;min-width:760px;width:100%;height:auto}
+.diagram text{font-family:var(--body);fill:var(--text)}
+.dcap{font-size:.9rem;color:var(--text-3);margin-top:12px}
+.flow{stroke-dasharray:7 9;animation:dash 1.1s linear infinite}
+.flow.slow{animation-duration:2.2s}
+@keyframes dash{to{stroke-dashoffset:-32}}
+.node{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.2}
+.t1{font-size:15px;font-weight:600}.t2{font-size:12.5px;fill:var(--text-3)!important}
+.pulse{animation:glow 2.8s ease-in-out infinite}
+@keyframes glow{50%{filter:drop-shadow(0 0 10px currentColor)}}
+
+/* confidence */
+.conf{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:28px;margin-top:40px;align-items:start}
+@media(max-width:860px){.conf{grid-template-columns:1fr}}
+.bars{border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:24px;position:relative}
+.bars .tk{font:italic 1.05rem var(--display);color:var(--text);margin-bottom:18px;display:block}
+.brow{display:grid;grid-template-columns:28px 1fr 64px 70px;gap:10px;align-items:center;margin:9px 0;font:.88rem var(--mono)}
+.brow .b{height:20px;border-radius:5px;background:var(--surface-3);position:relative;overflow:hidden}
+.brow .b i{position:absolute;inset:0 auto 0 0;width:0;background:var(--line-strong);transition:width 1.4s cubic-bezier(.2,.8,.2,1)}
+.brow.top .b i{background:var(--local)}.brow.top b.l{color:var(--spot)}
+.brow .p{text-align:right;color:var(--text-2)}.brow .g{text-align:right;color:var(--text-3)}
+.bhead{display:grid;grid-template-columns:28px 1fr 64px 70px;gap:10px;font:.72rem var(--mono);color:var(--text-3);text-transform:uppercase;letter-spacing:.08em}
+.bhead span:nth-child(3),.bhead span:nth-child(4){text-align:right}
+.formula{border:1px dashed var(--line-strong);border-radius:12px;padding:14px 16px;font:.92rem/1.7 var(--mono);color:var(--text-2);margin:18px 0;background:var(--bg)}
+.verdict{display:flex;gap:12px;align-items:center;margin-top:18px;padding:12px 14px;border-radius:12px;background:rgba(63,182,139,.1);border:1px solid rgba(63,182,139,.35);font-size:.95rem}
+.verdict b{font-family:var(--mono);color:var(--good)}
+
+/* problems */
+.pair{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);margin-top:14px}
+.pair>div{padding:20px 24px}.pair>div:first-child{border-right:1px solid var(--line);background:rgba(230,103,103,.05)}
+.pair>div:last-child{background:rgba(63,182,139,.05)}
+.pair h4{font:600 .72rem var(--mono);text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}
+.pair>div:first-child h4{color:var(--bad)}.pair>div:last-child h4{color:var(--good)}
+.pair p{margin:0;font-size:1rem;color:var(--text)}
+@media(max-width:700px){.pair{grid-template-columns:1fr}.pair>div:first-child{border-right:0;border-bottom:1px solid var(--line)}}
+.hl{color:var(--spot);font-family:var(--mono);font-size:.92em}
+
+/* results */
+.res{margin-top:40px;border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:26px}
+.rrow{display:grid;grid-template-columns:150px 1fr 74px;gap:14px;align-items:center;margin:16px 0}
+.rrow .nm{font:.92rem var(--mono)}.rrow .nm small{display:block;color:var(--text-3);font-size:.72rem}
+.rrow .track{height:30px;background:var(--surface-3);border-radius:8px;overflow:hidden;position:relative}
+.rrow .track i{position:absolute;inset:0 auto 0 0;width:0;background:var(--local);border-radius:8px;transition:width 1.6s cubic-bezier(.2,.8,.2,1)}
+.rrow.rej .track i{background:repeating-linear-gradient(135deg,var(--text-3) 0 3px,transparent 3px 9px)}
+.rrow.base .track i{background:var(--line-strong)}
+.rrow.srv .track i{background:linear-gradient(90deg,var(--local),var(--good))}
+.rrow .v{font:600 1.15rem var(--mono);text-align:right}
+.rrow .st{grid-column:2/4;font-size:.82rem;color:var(--text-3);margin-top:-8px}
+@media(max-width:600px){.rrow{grid-template-columns:1fr 60px}.rrow .nm{grid-column:1/3}.rrow .st{grid-column:1/3}}
+.note{font-size:.9rem;color:var(--text-3);margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+
+/* video */
+video{width:100%;border-radius:16px;border:1px solid var(--line-strong);background:#000;margin-top:36px;display:block;box-shadow:0 30px 80px -30px rgba(57,135,229,.35)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.chips span{border:1px solid var(--line);border-radius:99px;padding:5px 12px;font:.8rem var(--mono);color:var(--text-2);background:var(--surface)}
+footer{border-top:1px solid var(--line);padding:56px 0 80px;color:var(--text-3);font-size:.92rem}
+footer .wrap{display:flex;flex-wrap:wrap;gap:28px 60px;justify-content:space-between}
+footer b{color:var(--text);font-family:var(--display);font-size:1.6rem;display:block;margin-bottom:6px}
+
+/* reveal */
+.js .rv{opacity:0;transform:translateY(26px);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.8,.2,1)}
+.js .rv.in{opacity:1;transform:none}
+.js .rv.d1{transition-delay:.08s}.js .rv.d2{transition-delay:.16s}.js .rv.d3{transition-delay:.24s}.js .rv.d4{transition-delay:.32s}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}html{scroll-behavior:auto}
+  .js .rv{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add("js")</script>
+
+<nav aria-label="Sections">
+  <div class="wrap">
+    <b>Understudy</b>
+    <a href="#why" class="hide">Intent</a>
+    <a href="#problem" class="hide">Problem</a>
+    <a href="#solution">Solution</a>
+    <a href="#confidence" class="hide">Confidence</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#lessons" class="hide">Lessons</a>
+    <a href="#results">Results</a>
+    <a href="#demo">Demo</a>
+  </div>
+  <div id="bar"></div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="pill rv"><i></i> Awign Hackathon &middot; Open Theme &middot; team e/acc</span>
+    <h1 class="rv d1" style="margin-top:26px">The local model<br>that learns from<br>its <em>teacher.</em></h1>
+    <p class="lede rv d2" style="margin-top:28px">A small model on the device answers support tickets. A cloud teacher steps in only when it is unsure. Every teacher answer becomes training data, so the local model needs the teacher a little less each round.</p>
+    <div class="cta rv d3">
+      <a class="btn primary" href="#demo">Watch the demo</a>
+      <a class="btn" href="#architecture">See the architecture</a>
+      <a class="btn" href="https://github.com/Auro-rium/understudy">GitHub</a>
+    </div>
+
+    <div class="router rv d3" aria-label="Animated diagram: tickets enter a confidence gate and are routed to the local model, the cloud teacher, or human review">
+      <svg viewBox="0 0 1100 340" role="img" aria-label="Ticket router">
+        <defs>
+          <path id="pIn" d="M40 170 H330"/>
+          <path id="pL" d="M330 170 C 430 170, 450 70, 560 70 H800"/>
+          <path id="pT" d="M330 170 C 430 170, 450 170, 560 170 H800"/>
+          <path id="pR" d="M330 170 C 430 170, 450 270, 560 270 H800"/>
+          <linearGradient id="gate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3987e5"/><stop offset="1" stop-color="#d95926"/></linearGradient>
+        </defs>
+        <g fill="none" stroke-width="2">
+          <use href="#pIn" stroke="#353c52"/><use href="#pL" stroke="#3987e5" opacity=".55"/><use href="#pT" stroke="#d95926" opacity=".55"/><use href="#pR" stroke="#9085e9" opacity=".55"/>
+        </g>
+        <g fill="none" stroke-width="2.5">
+          <use href="#pIn" stroke="#f2f0ea" class="flow" opacity=".6"/><use href="#pL" stroke="#3987e5" class="flow"/><use href="#pT" stroke="#d95926" class="flow slow"/><use href="#pR" stroke="#9085e9" class="flow slow"/>
+        </g>
+        <!-- gate -->
+        <g class="pulse" style="color:#f2c14e">
+          <rect x="300" y="110" width="60" height="120" rx="14" fill="#12151f" stroke="url(#gate)" stroke-width="2.5"/>
+          <text x="330" y="165" text-anchor="middle" class="t1" fill="#f2c14e" style="fill:#f2c14e">conf</text>
+          <text x="330" y="186" text-anchor="middle" class="t2">&ge; thr?</text>
+        </g>
+        <!-- sources -->
+        <text x="40" y="150" class="t2">tickets</text>
+        <!-- lanes -->
+        <g>
+          <rect x="800" y="36" width="290" height="68" rx="14" class="node" style="stroke:#3987e5"/>
+          <text x="822" y="66" class="t1" style="fill:#3987e5">Local model</text><text x="822" y="88" class="t2">Gemma 4 E4B · on device · free</text>
+          <rect x="800" y="136" width="290" height="68" rx="14" class="node" style="stroke:#d95926"/>
+          <text x="822" y="166" class="t1" style="fill:#d95926">Cloud teacher</text><text x="822" y="188" class="t2">only when unsure · saved as training data</text>
+          <rect x="800" y="236" width="290" height="68" rx="14" class="node" style="stroke:#9085e9"/>
+          <text x="822" y="266" class="t1" style="fill:#9085e9">Human review</text><text x="822" y="288" class="t2">teacher unreachable · never a silent guess</text>
+        </g>
+        <!-- packets -->
+        <g id="packets"></g>
+      </svg>
+      <div class="stats" aria-live="off">
+        <div class="stat"><b class="local" id="sLocal">0</b><span>answered locally</span></div>
+        <div class="stat"><b class="teacher" id="sTeacher">0</b><span>escalated to teacher</span></div>
+        <div class="stat"><b class="review" id="sReview">0</b><span>sent to human review</span></div>
+        <div class="stat"><b class="save" id="sShare">0%</b><span>local share (illustrative loop)</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="eyebrow rv">Intention</div>
+    <h2 class="rv">Triage that is cheap, private, and gets better by itself.</h2>
+    <p class="lede sub rv d1">On a gig-work marketplace, thousands of workers file tickets: a payment that has not arrived, a KYC document stuck, an app that crashes at login. Each ticket must land with the right team, at the right urgency, fast.</p>
+    <div class="cats rv d2" role="list">
+      <div class="cat" role="listitem"><b>A</b>Payment delay</div>
+      <div class="cat" role="listitem"><b>B</b>Payment dispute</div>
+      <div class="cat" role="listitem"><b>C</b>KYC / onboarding</div>
+      <div class="cat" role="listitem"><b>D</b>Task assignment</div>
+      <div class="cat" role="listitem"><b>E</b>App bug / login</div>
+      <div class="cat" role="listitem"><b>F</b>Submission problems</div>
+      <div class="cat" role="listitem"><b>G</b>Account suspended</div>
+      <div class="cat" role="listitem"><b>H</b>Other</div>
+    </div>
+    <p class="rv d3" style="margin-top:22px">Output per ticket is one category (A&ndash;H) and one priority (P1&ndash;P4). The owning team is a fixed lookup from the category.</p>
+  </div>
+</section>
+
+<section id="problem" style="background:linear-gradient(180deg,transparent,rgba(18,21,31,.7),transparent)">
+  <div class="wrap">
+    <div class="eyebrow rv">The problem</div>
+    <h2 class="rv">Every obvious option fails somewhere.</h2>
+    <div class="grid g2">
+      <article class="card bad rv"><span class="n">01</span><h3>Send everything to a frontier model</h3><p>Accurate, but you pay for every ticket, wait on the network for every ticket, and ship worker data off-device every time. Cost scales linearly with volume.</p></article>
+      <article class="card bad rv d1"><span class="n">02</span><h3>Run a small model alone</h3><p>Cheap and private, but it is wrong often enough to hurt, and it never improves because nothing teaches it.</p></article>
+      <article class="card bad rv d2"><span class="n">03</span><h3>Label data by hand</h3><p>Good labels, slow loop. By the time a batch is labelled, the ticket mix has moved on.</p></article>
+      <article class="card bad rv d3"><span class="n">04</span><h3>Silent wrong answers</h3><p>A mis-routed payment or KYC ticket is worse than a slow one. Any system that guesses without saying so is unsafe, and the cloud being down must not stop triage.</p></article>
+    </div>
+  </div>
+</section>
+
+<section id="solution">
+  <div class="wrap">
+    <div class="eyebrow rv">The solution</div>
+    <h2 class="rv">A loop where the expensive model trains the cheap one.</h2>
+    <p class="lede sub rv d1">Understudy treats the cloud teacher as a coach, not a crutch. The local model works every ticket first and learns from every correction.</p>
+    <div class="loop">
+      <div class="step s1 rv"><span class="tag local">Route</span><h3>Local model answers first</h3><p>Gemma 4 E4B (4-bit, MLX, Apple silicon) reads the ticket and returns a category, a priority, and a confidence.</p></div>
+      <div class="step s2 rv d1"><span class="tag teacher">Teach</span><h3>Teacher steps in when unsure</h3><p>Below a calibrated threshold, the cloud teacher answers. Its answer is saved as a training example. If the teacher is unreachable, the ticket waits in a human review queue.</p></div>
+      <div class="step s3 rv d2"><span class="tag save">Train</span><h3>LoRA round on the Mac</h3><p>Saved teacher answers fine-tune a small LoRA adapter locally. No GPU rental. The serving model is unloaded during the round so only one model sits in RAM.</p></div>
+      <div class="step s4 rv d3"><span class="tag" style="color:var(--spot)">Gate</span><h3>Promote only if it is better</h3><p>The new adapter is scored on a held-out test set. It is promoted only if category macro-F1 strictly improves. Otherwise the old model keeps serving and the reason is stored.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="confidence">
+  <div class="wrap">
+    <div class="eyebrow rv">How confidence works</div>
+    <h2 class="rv">Eight scores in, one honest probability out.</h2>
+    <div class="conf">
+      <div class="rv">
+        <p class="lede">Before writing its answer, the model gives every possible next token a raw score, called a logit. We read only the eight scores for the category letters A&ndash;H.</p>
+        <div class="formula">softmax(logit<sub>A..H</sub>) &rarr; 8 probabilities that sum to 100%<br>confidence = probability of the chosen letter</div>
+        <p>The threshold is calibrated per model version: the lowest value that still gives at least 95% accuracy above it on the validation set. At or above it, the local answer stands. Below it, the teacher is asked.</p>
+        <p>Priority (P1&ndash;P4) comes from generated text and has no confidence score. Confidence gates the category only.</p>
+        <div class="verdict"><b>0.9999 &ge; 0.447</b> served locally. Round 3 threshold is 0.4472.</div>
+      </div>
+      <div class="bars rv d1" id="bars" aria-label="Logits and probabilities for one real ticket">
+        <span class="tk">&ldquo;My payment for last week is still not paid, please help&rdquo;</span>
+        <div class="bhead"><span></span><span>probability</span><span>prob</span><span>logit</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture" style="background:linear-gradient(180deg,transparent,rgba(18,21,31,.7),transparent)">
+  <div class="wrap">
+    <div class="eyebrow rv">Architecture</div>
+    <h2 class="rv">Small pieces, one path for each job.</h2>
+
+    <div class="diagram rv" role="img" aria-label="System architecture diagram">
+      <svg viewBox="0 0 1100 560">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8d92a8"/></marker></defs>
+        <!-- frontend -->
+        <rect x="20" y="40" width="190" height="180" rx="16" class="node"/>
+        <text x="40" y="72" class="t1">Frontend</text><text x="40" y="92" class="t2">Next.js dashboard</text>
+        <text x="40" y="130" class="t2">Live &middot; charts &middot; stream</text><text x="40" y="152" class="t2">Training &middot; rounds</text><text x="40" y="174" class="t2">Results &middot; macro-F1</text>
+        <rect x="20" y="260" width="190" height="86" rx="16" class="node"/>
+        <text x="40" y="292" class="t1">Open WebUI</text><text x="40" y="314" class="t2">chat via OpenAI /v1</text>
+        <!-- backend frame -->
+        <rect x="290" y="20" width="520" height="520" rx="22" fill="none" stroke="#353c52" stroke-dasharray="4 6"/>
+        <text x="312" y="50" class="t1">FastAPI backend</text><text x="312" y="70" class="t2">REST &middot; SSE &middot; /v1 &middot; X-Demo-Key auth</text>
+        <rect x="320" y="96" width="210" height="84" rx="14" class="node" style="stroke:#f2c14e"/>
+        <text x="338" y="128" class="t1">Router</text><text x="338" y="150" class="t2">confidence gate vs threshold</text>
+        <rect x="570" y="96" width="210" height="84" rx="14" class="node" style="stroke:#3987e5"/>
+        <text x="588" y="128" class="t1">ModelHolder</text><text x="588" y="150" class="t2">hot-swap · RW lock</text>
+        <rect x="320" y="220" width="210" height="110" rx="14" class="node"/>
+        <text x="338" y="252" class="t1">SQLite</text><text x="338" y="274" class="t2">tickets · predictions</text><text x="338" y="294" class="t2">training examples · rounds</text><text x="338" y="314" class="t2">thresholds · ledger · review</text>
+        <rect x="570" y="220" width="210" height="110" rx="14" class="node"/>
+        <text x="588" y="252" class="t1">Telemetry</text><text x="588" y="274" class="t2">ring buffer · stage timings</text><text x="588" y="294" class="t2">/logs · /api/telemetry</text><text x="588" y="314" class="t2">logits &amp; probabilities</text>
+        <rect x="320" y="380" width="460" height="130" rx="14" class="node" style="stroke:#199e70"/>
+        <text x="338" y="412" class="t1">Training round</text><text x="338" y="434" class="t2">collect teacher examples &rarr; LoRA fine-tune (mlx_local) &rarr; score on held-out test</text>
+        <text x="338" y="456" class="t2">promotion gate: strict macro-F1 gain &rarr; save adapters/round_N, hot-swap, recalibrate threshold</text>
+        <text x="338" y="486" class="t2" style="fill:#3fb68b!important">no gain &rarr; keep serving model, store the reason</text>
+        <!-- right -->
+        <rect x="890" y="96" width="190" height="84" rx="16" class="node" style="stroke:#3987e5"/>
+        <text x="910" y="128" class="t1" style="fill:#3987e5">Local model</text><text x="910" y="150" class="t2">Gemma 4 E4B 4-bit + LoRA</text>
+        <rect x="890" y="236" width="190" height="84" rx="16" class="node" style="stroke:#d95926"/>
+        <text x="910" y="268" class="t1" style="fill:#d95926">Cloud teacher</text><text x="910" y="290" class="t2">Backboard.io · gpt-6-luna</text>
+        <rect x="890" y="396" width="190" height="84" rx="16" class="node" style="stroke:#9085e9"/>
+        <text x="910" y="428" class="t1" style="fill:#9085e9">Review queue</text><text x="910" y="450" class="t2">humans pick up the rest</text>
+        <!-- flows -->
+        <g fill="none" stroke="#8d92a8" stroke-width="1.8" marker-end="url(#ah)" class="flow">
+          <path d="M210 110 H320"/><path d="M530 138 H570"/><path d="M780 138 H890"/>
+          <path d="M425 180 V220"/><path d="M780 275 H890" stroke="#d95926"/><path d="M425 330 V380"/>
+          <path d="M575 330 L575 380" opacity="0"/>
+          <path d="M210 303 H300 V160 H320" stroke="#9085e9"/>
+          <path d="M780 470 H890" stroke="#9085e9"/>
+        </g>
+        <g fill="none" stroke="#8d92a8" stroke-width="1.8" marker-end="url(#ah)" class="flow slow">
+          <path d="M320 300 H300 V200" opacity="0"/>
+          <path d="M530 260 H570"/>
+          <path d="M600 380 V330" stroke="#199e70"/>
+          <path d="M675 96 V60 H1000 V96" stroke="#3987e5"/>
+        </g>
+        <path d="M530 160 C 580 200, 700 210, 970 236" fill="none" stroke="#d95926" stroke-width="1.8" class="flow slow" marker-end="url(#ah)"/>
+        <text x="640" y="236" class="t2" style="fill:#d95926!important">unsure &rarr; teacher</text>
+        <text x="230" y="102" class="t2">SSE · REST</text>
+        <circle r="5" fill="#f2c14e"><animateMotion dur="4s" repeatCount="indefinite" path="M210 110 H320 L530 138 H570 L780 138 H890"/></circle>
+        <circle r="5" fill="#3fb68b"><animateMotion dur="5s" repeatCount="indefinite" begin="1s" path="M425 330 V380 H600 V330"/></circle>
+      </svg>
+    </div>
+    <p class="dcap">Blue: the local path. Orange: escalation to the teacher. Purple: human review. Green: the training and promotion loop. The dots are tickets and training data in motion.</p>
+
+    <h3 style="margin-top:56px" class="rv">One ticket, one pass</h3>
+    <div class="diagram rv" role="img" aria-label="One ticket's journey through the backend">
+      <svg viewBox="0 0 1100 250">
+        <defs><marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8d92a8"/></marker></defs>
+        <g fill="none" stroke="#353c52" stroke-width="2"><path id="journey" d="M70 110 H1030"/></g>
+        <path d="M70 110 H1030" fill="none" stroke="#f2f0ea" stroke-width="2" class="flow" opacity=".45"/>
+        <g>
+          <g><circle cx="70" cy="110" r="30" class="node"/><text x="70" y="115" text-anchor="middle" class="t2" style="fill:#f2f0ea!important">ticket</text></g>
+          <g><rect x="170" y="78" width="130" height="64" rx="12" class="node"/><text x="235" y="107" text-anchor="middle" class="t1">POST</text><text x="235" y="127" text-anchor="middle" class="t2">/api/classify</text></g>
+          <g><rect x="360" y="78" width="150" height="64" rx="12" class="node" style="stroke:#3987e5"/><text x="435" y="107" text-anchor="middle" class="t1">One forward pass</text><text x="435" y="127" text-anchor="middle" class="t2">logits + KV cache</text></g>
+          <g><rect x="570" y="78" width="130" height="64" rx="12" class="node"/><text x="635" y="107" text-anchor="middle" class="t1">Softmax A–H</text><text x="635" y="127" text-anchor="middle" class="t2">confidence</text></g>
+          <g><polygon points="790,64 850,110 790,156 730,110" class="node" style="stroke:#f2c14e"/><text x="790" y="106" text-anchor="middle" class="t1">&ge; thr?</text><text x="790" y="124" text-anchor="middle" class="t2">gate</text></g>
+          <g><rect x="900" y="78" width="130" height="64" rx="12" class="node"/><text x="965" y="107" text-anchor="middle" class="t1">SQLite + SSE</text><text x="965" y="127" text-anchor="middle" class="t2">dashboard updates</text></g>
+        </g>
+        <g fill="none" stroke-width="1.8" marker-end="url(#ah2)">
+          <path d="M790 156 V200 H650" stroke="#d95926" class="flow slow"/>
+          <path d="M790 64 V28 H965 V78" stroke="#3987e5" class="flow"/>
+        </g>
+        <text x="1030" y="22" text-anchor="end" class="t2" style="fill:#3987e5!important">yes: local answer (priority from the same cache)</text>
+        <rect x="400" y="180" width="250" height="40" rx="10" class="node" style="stroke:#d95926"/><text x="525" y="205" text-anchor="middle" class="t1" style="fill:#d95926">teacher &rarr; training example</text>
+        <text x="670" y="232" class="t2" style="fill:#9085e9!important">teacher unreachable &rarr; review queue</text>
+        <circle r="7" fill="#f2c14e"><animateMotion dur="6s" repeatCount="indefinite" path="M70 110 H1030"/></circle>
+      </svg>
+    </div>
+    <p class="dcap">The prompt is processed once. The same pass produces the confidence and fills the cache that the priority is decoded from.</p>
+  </div>
+</section>
+
+<section id="lessons">
+  <div class="wrap">
+    <div class="eyebrow rv">What went wrong, and what we did</div>
+    <h2 class="rv">Problems we hit, solutions that stuck.</h2>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>The model crashed with &ldquo;no Stream(gpu) in current thread&rdquo; when called from web worker threads.</p></div><div><h4>Solution</h4><p>MLX streams are per thread, so loading and inference run on one dedicated MLX thread.</p></div></div></div>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>Training and serving both want the memory. Two models do not fit comfortably.</p></div><div><h4>Solution</h4><p>Serving pauses and unloads during a round, then hot-swaps to the new adapter. One model in RAM at a time.</p></div></div></div>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>Each ticket processed its prompt twice: once for confidence, once to generate the priority.</p></div><div><h4>Solution</h4><p>One forward pass fills a KV cache that decoding continues from. Median latency <span class="hl">548 &rarr; 378 ms (&minus;31%)</span> with identical confidences and equal-or-better accuracy against gold labels.</p></div></div></div>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>A new training round can make the model worse.</p></div><div><h4>Solution</h4><p>A strict macro-F1 gate. Round 1 reached <span class="hl">69.5%</span> against a base of <span class="hl">76.1%</span> and was rejected, with the reason stored.</p></div></div></div>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>Quick tunnels did not deliver server-sent events, so the live page froze.</p></div><div><h4>Solution</h4><p>A polling watchdog in the frontend. The backend also reports its real streaming state in <code>/api/health</code>, so the Stop button survives reloads.</p></div></div></div>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>The dashboard polled a query that loaded every ticket into Python.</p></div><div><h4>Solution</h4><p>The time series is aggregated in SQL with identical output.</p></div></div></div>
+    <div class="rv"><div class="pair"><div><h4>Problem</h4><p>Test labels come from the teacher, not from people, so scores can flatter the model.</p></div><div><h4>Solution</h4><p>Every score is flagged <span class="hl">provisional</span> until human gold labels replace them. We say so on the page and in the README.</p></div></div></div>
+  </div>
+</section>
+
+<section id="results" style="background:linear-gradient(180deg,transparent,rgba(18,21,31,.7),transparent)">
+  <div class="wrap">
+    <div class="eyebrow rv">Results</div>
+    <h2 class="rv">Honest numbers, including the one that lost.</h2>
+    <div class="res rv" id="res">
+      <h3 style="font-size:1.1rem;margin-bottom:6px">Category macro-F1 on the held-out test set</h3>
+      <div class="rrow base"><div class="nm">base<small>no adapter</small></div><div class="track"><i data-w="76.1"></i></div><div class="v">76.1%</div></div>
+      <div class="rrow rej"><div class="nm">round_1<small>not promoted</small></div><div class="track"><i data-w="69.5"></i></div><div class="v">69.5%</div><div class="st">Did not beat 76.1%, so it never served. The gate worked.</div></div>
+      <div class="rrow"><div class="nm">round_2<small>promoted</small></div><div class="track"><i data-w="78.9"></i></div><div class="v">78.9%</div></div>
+      <div class="rrow srv"><div class="nm">round_3<small>serving now</small></div><div class="track"><i data-w="91.9"></i></div><div class="v">91.9%</div></div>
+      <p class="note">Provisional: test labels were produced by the teacher model, not by people. Treat these as a relative comparison between rounds, not an absolute accuracy claim.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card rv"><span class="n">LATENCY</span><h3><span data-count="354">0</span> ms</h3><p>Median local classification per ticket, measured end to end including the SQLite write.</p></div>
+      <div class="card rv d1"><span class="n">RECORDED DEMO RUN</span><h3>~99% local</h3><p>In a recorded run, almost every ticket was answered on the device. Teacher spend was about $0.0002 for hundreds of tickets, against roughly $0.03 to send them all to the cloud.</p></div>
+      <div class="card rv d2"><span class="n">TRAINING</span><h3>Minutes, on a Mac</h3><p>A LoRA round trained in between 2.7 and 33 minutes on Apple silicon. No GPU rental, training cost $0.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="wrap">
+    <div class="eyebrow rv">Working product</div>
+    <h2 class="rv">Watch it run, end to end.</h2>
+    <p class="lede sub rv d1">From the first streamed ticket to live charts, then the training and results pages and the backend telemetry.</p>
+    <video class="rv d2" controls preload="metadata" poster="poster.png" aria-label="Understudy product demo">
+      <source src="demo.mp4" type="video/mp4">
+      Your browser cannot play this video. <a href="demo.mp4">Download the demo</a>.
+    </video>
+    <div class="chips rv"><span>FastAPI Swagger</span><span>Start stream &middot; 90/min</span><span>Share and cost charts</span><span>Telemetry &amp; logits</span><span>Review queue</span><span>Past runs</span><span>Training rounds</span><span>Results</span></div>
+    <p class="dcap">Music: &ldquo;Floating Cities&rdquo; by Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div><b>Understudy</b>Team e/acc &middot; Awign Hackathon, Open Theme<br><a href="https://github.com/Auro-rium/understudy">github.com/Auro-rium/understudy</a></div>
+    <div>Gemma 4 E4B (MLX, 4-bit, LoRA)<br>FastAPI &middot; SQLite &middot; SSE &middot; Next.js<br>Backboard.io teacher</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* scroll progress */
+  var bar = document.getElementById("bar");
+  function prog(){var h=document.documentElement;var s=h.scrollTop/(h.scrollHeight-h.clientHeight||1);bar.style.width=(s*100)+"%"}
+  addEventListener("scroll",prog,{passive:true});prog();
+
+  /* reveal + triggers */
+  var io = new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}})},{threshold:.12});
+  document.querySelectorAll(".rv").forEach(function(el){io.observe(el)});
+
+  /* confidence bars */
+  var data=[["A",28.25],["B",19.0],["C",17.5],["D",14.69],["E",17.5],["F",7.34],["G",7.63],["H",14.25]];
+  var m=Math.max.apply(null,data.map(function(d){return d[1]}));
+  var ex=data.map(function(d){return Math.exp(d[1]-m)});var z=ex.reduce(function(a,b){return a+b},0);
+  var box=document.getElementById("bars");
+  data.forEach(function(d,i){
+    var p=ex[i]/z,top=i===0;
+    var r=document.createElement("div");r.className="brow"+(top?" top":"");
+    r.innerHTML='<b class="l">'+d[0]+'</b><div class="b"><i data-w="'+Math.max(p*100,.8)+'"></i></div><span class="p">'+(p>=.0001?(p*100).toFixed(2)+"%":"&lt;0.01%")+'</span><span class="g">'+d[1].toFixed(2)+'</span>';
+    box.appendChild(r);
+  });
+  function grow(root){root.querySelectorAll("i[data-w]").forEach(function(i){i.style.width=i.dataset.w+"%"})}
+  var gio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){grow(e.target);gio.unobserve(e.target)}})},{threshold:.3});
+  gio.observe(box);gio.observe(document.getElementById("res"));
+  if(reduce){grow(box);grow(document.getElementById("res"))}
+
+  /* count up */
+  document.querySelectorAll("[data-count]").forEach(function(el){
+    var t=+el.dataset.count,done=false;
+    new IntersectionObserver(function(es,o){es.forEach(function(e){
+      if(e.isIntersecting&&!done){done=true;o.disconnect();
+        if(reduce){el.textContent=t;return}
+        var s=performance.now();(function f(n){var k=Math.min((n-s)/1200,1);el.textContent=Math.round(t*(1-Math.pow(1-k,3)));if(k<1)requestAnimationFrame(f)})(s)}
+    })}).observe(el);
+  });
+
+  /* hero router: illustrative packets, local-heavy like a real run */
+  var NS="http://www.w3.org/2000/svg",g=document.getElementById("packets");
+  var cnt={l:0,t:0,r:0},paths={l:"M40 170 H330 C 430 170, 450 70, 560 70 H800",t:"M40 170 H330 C 430 170, 450 170, 560 170 H800",r:"M40 170 H330 C 430 170, 450 270, 560 270 H800"};
+  var col={l:"#3987e5",t:"#d95926",r:"#9085e9"};
+  function upd(){var n=cnt.l+cnt.t+cnt.r;document.getElementById("sLocal").textContent=cnt.l;document.getElementById("sTeacher").textContent=cnt.t;document.getElementById("sReview").textContent=cnt.r;document.getElementById("sShare").textContent=n?Math.round(cnt.l/n*100)+"%":"0%"}
+  function spawn(){
+    var x=Math.random(),k=x<.82?"l":x<.95?"t":"r";
+    var c=document.createElementNS(NS,"circle");c.setAttribute("r","6");c.setAttribute("fill",col[k]);
+    var a=document.createElementNS(NS,"animateMotion");a.setAttribute("dur","2.6s");a.setAttribute("path",paths[k]);a.setAttribute("fill","freeze");a.setAttribute("begin","indefinite");
+    c.appendChild(a);g.appendChild(c);a.beginElement&&a.beginElement();
+    setTimeout(function(){cnt[k]++;upd()},2300);
+    setTimeout(function(){c.remove()},3200);
+  }
+  if(!reduce){setInterval(function(){if(!document.hidden)spawn()},520);spawn()}
+  else{cnt={l:41,t:7,r:2};upd()}
+})();
+</script>
+</body>
+</html>

@@ -17,3 +17,8 @@ data/.teacher_cache/
 __pycache__/
 *.pyc
 .claude/worktrees/
+
+# explainer deploy artifacts (video is copied from docs/media at deploy time)
+docs/explainer/demo.mp4
+docs/explainer/.vercel/
+.vercel/
