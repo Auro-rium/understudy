@@ -37,6 +37,7 @@ IID="$(aws ec2 run-instances --region "$REGION" --image-id "$AMI" --instance-typ
   --user-data "#!/bin/bash
 shutdown -P +$MAXMIN" \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME}]" --query 'Instances[0].InstanceId' --output text)"
+[[ "$IID" == i-* ]] || { echo "LAUNCH FAILED (no instance id); nothing is running."; IID=""; exit 1; }
 echo "launched $IID ($ITYPE), self-shutdown in ${MAXMIN} min"
 aws ec2 wait instance-running --region "$REGION" --instance-ids "$IID"
 HOST="$(aws ec2 describe-instances --region "$REGION" --instance-ids "$IID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)"
