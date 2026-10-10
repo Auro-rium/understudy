@@ -1,0 +1,194 @@
+{
+  "base": "http://127.0.0.1:8000",
+  "started": "2026-10-10T20:44:49",
+  "model_version": "round_3",
+  "first_classify_s": 2.15,
+  "phase_a_stream_at_calibrated_threshold": {
+    "n": 300,
+    "wall_s": 176.6,
+    "tickets_per_s": 1.7,
+    "category_acc": 0.9366666666666666,
+    "category_macro_f1": 0.9341154154459944,
+    "priority_acc": 0.7966666666666666,
+    "source": {
+      "local": 298,
+      "teacher": 2
+    },
+    "mean_latency_ms": 485.90180502069416,
+    "cost_usd": 0.0001589,
+    "n_disagree_rows": 16,
+    "category_acc_excluding_disagrees": 0.9577464788732394,
+    "model_versions": {
+      "round_3": 300
+    }
+  },
+  "phase_b_threshold": {
+    "version": "round_3",
+    "calibrated": 0.44720948669604244,
+    "temporary": 0.9
+  },
+  "teacher_example": {
+    "demo_label": [
+      "C",
+      "P3"
+    ],
+    "teacher": [
+      "C",
+      "P2"
+    ],
+    "cost_usd": 6.82e-05
+  },
+  "phase_b": {
+    "teacher_tickets": 1,
+    "review_tickets": 1,
+    "note": "threshold temporarily raised so uncertain tickets exist; NOT part of phase A numbers"
+  },
+  "sse_event_counts": {
+    "mode": 3,
+    "prediction": 314
+  },
+  "checks": [
+    {
+      "name": "health reports a promoted round (not base)",
+      "ok": true,
+      "detail": "{'status': 'ok', 'model_version': 'round_3', 'mode': 'online'}"
+    },
+    {
+      "name": "health keys",
+      "ok": true,
+      "detail": "{'status': 'ok', 'model_version': 'round_3', 'mode': 'online'}"
+    },
+    {
+      "name": "CORS preflight allows origin",
+      "ok": true,
+      "detail": "*"
+    },
+    {
+      "name": "snapshot has all keys",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "SSE content-type + CORS",
+      "ok": true,
+      "detail": "text/event-stream; charset=utf-8"
+    },
+    {
+      "name": "first classify works in a worker thread (MLX stream gate)",
+      "ok": true,
+      "detail": "200 {\"id\":1,\"category\":\"E\",\"category_name\":\"app_technical\",\"priority\":\"P2\",\"team\":\"Tech\",\"source\":\"local\",\"confidence\":0.9920824845783435,\"latency_ms\":2147.219041013159,\"cost_usd\":0.0,\"model_version\":\"rou"
+    },
+    {
+      "name": "classify response shape",
+      "ok": true,
+      "detail": "['id', 'category', 'category_name', 'priority', 'team', 'source', 'confidence', 'latency_ms', 'cost_usd', 'model_version']"
+    },
+    {
+      "name": "stream start",
+      "ok": true,
+      "detail": "{\"running\":true,\"rate_per_min\":600.0}"
+    },
+    {
+      "name": "stream produced 300 tickets",
+      "ok": true,
+      "detail": "300 in 177s"
+    },
+    {
+      "name": "ticket shape matches frontend types",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "recent tickets newest first",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "every phase-A ticket served by the promoted model",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "summary keys + shares sum to 1",
+      "ok": true,
+      "detail": "{'total': 301, 'local_share': 0.9933554817275747, 'teacher_share': 0.006644518272425249, 'review_share': 0.0, 'cost_usd_total': 0.0001589, 'cost_avoided_usd': 0.02375555, 'model_version': 'round_3', 'mode': 'online'}"
+    },
+    {
+      "name": "summary total counts tickets",
+      "ok": true,
+      "detail": "301"
+    },
+    {
+      "name": "timeseries non-empty with frontend keys",
+      "ok": true,
+      "detail": "31"
+    },
+    {
+      "name": "SSE delivered a prediction per ticket",
+      "ok": true,
+      "detail": "{'mode': 1, 'prediction': 301}"
+    },
+    {
+      "name": "SSE prediction payload has ticket keys",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "teacher path: at least one ticket escalated to the real teacher",
+      "ok": true,
+      "detail": "Counter({'local': 11, 'teacher': 1})"
+    },
+    {
+      "name": "teacher ticket billed from real token counts",
+      "ok": true,
+      "detail": "6.82e-05"
+    },
+    {
+      "name": "teacher ticket confidence below threshold",
+      "ok": true,
+      "detail": "0.4271982812763567"
+    },
+    {
+      "name": "cost_avoided_usd > 0 once a teacher call exists",
+      "ok": true,
+      "detail": "0.023467"
+    },
+    {
+      "name": "ledger rows == all teacher tickets; training_examples written",
+      "ok": true,
+      "detail": "ledger=(3, 0.0002271) train=3 teacher_tickets=3"
+    },
+    {
+      "name": "ledger cost == sum of ticket cost_usd",
+      "ok": true,
+      "detail": "0.0002271 vs 0.00022710000000000002"
+    },
+    {
+      "name": "offline: health + SSE mode event",
+      "ok": true,
+      "detail": "offline mode_events=2"
+    },
+    {
+      "name": "offline: low-confidence ticket -> source=review (no cloud call)",
+      "ok": true,
+      "detail": "Counter({'review': 1})"
+    },
+    {
+      "name": "offline: no teacher call made",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "offline: review_queue lists a review ticket",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "back online",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "passed": 28,
+  "failed": []
+}

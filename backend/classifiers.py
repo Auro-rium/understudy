@@ -2,8 +2,10 @@
 import math
 import os
 import re
+import threading
 import time
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
 
@@ -99,6 +101,22 @@ class FakeClassifier(BaseClassifier):
 
 
 # ---------------------------------------------------------------- mlx in-process
+# MLX streams are per-thread: arrays made by a model loaded on one thread fail ("no Stream(gpu) in
+# current thread") when used from FastAPI's worker threads. All load+inference runs on ONE thread.
+_MLX_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
+_MLX_THREAD_IDS: set = set()
+
+
+def _on_mlx_thread(fn, *args):
+    if threading.get_ident() in _MLX_THREAD_IDS:
+        return fn(*args)
+
+    def run():
+        _MLX_THREAD_IDS.add(threading.get_ident())
+        return fn(*args)
+    return _MLX_POOL.submit(run).result()
+
+
 class MlxInProcessClassifier(BaseClassifier):
     """mlx_lm.load + softmax over A-H first-token logits. mlx is imported lazily."""
     name = "mlx"
@@ -108,8 +126,10 @@ class MlxInProcessClassifier(BaseClassifier):
         self.model_path = model_path or os.environ.get("LOCAL_MODEL", "mlx-community/gemma-4-e4b-it-4bit")
         self.adapter_path = adapter_path
         if _loaded is None:
-            from mlx_lm import load  # lazy
-            _loaded = load(self.model_path, adapter_path=adapter_path)
+            def _load():
+                from mlx_lm import load  # lazy
+                return load(self.model_path, adapter_path=adapter_path)
+            _loaded = _on_mlx_thread(_load)
         self.model, self.tokenizer = _loaded[0], _loaded[1]
         self._letter_ids = None
 
@@ -135,6 +155,9 @@ class MlxInProcessClassifier(BaseClassifier):
         return self._letter_ids
 
     def classify(self, text: str) -> ClassifierOutput:
+        return _on_mlx_thread(self._classify, text)
+
+    def _classify(self, text: str) -> ClassifierOutput:
         import mlx.core as mx  # lazy
         from mlx_lm import generate
         prompt = self._prompt(text)
@@ -163,7 +186,8 @@ class MlxInProcessClassifier(BaseClassifier):
     def reload(self):
         if self.model is None:
             from mlx_lm import load
-            self.model, self.tokenizer = load(self.model_path, adapter_path=self.adapter_path)
+            self.model, self.tokenizer = _on_mlx_thread(
+                lambda: load(self.model_path, adapter_path=self.adapter_path))
 
     def with_adapter(self, adapter_path: str) -> "MlxInProcessClassifier":
         return MlxInProcessClassifier(self.model_path, adapter_path)

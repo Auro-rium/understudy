@@ -199,8 +199,11 @@ def main():
         check("cost_avoided_usd > 0 once a teacher call exists", after["cost_avoided_usd"] > 0, after["cost_avoided_usd"])
         te = db.execute("SELECT COUNT(*), COALESCE(SUM(cost_usd),0) FROM cost_ledger").fetchone()
         tr = db.execute("SELECT COUNT(*) FROM training_examples WHERE source='teacher'").fetchone()[0]
-        check("ledger rows == teacher tickets; training_examples written", te[0] == len(teach) and tr == len(teach), f"ledger={te} train={tr}")
-        check("ledger cost == sum of ticket cost_usd", abs(te[1] - sum(r["cost_usd"] for _, r in teach)) < 1e-9, te[1])
+        a_teach = [t for _, t in scored if t["source"] == "teacher"]  # phase-A escalations count too
+        n_t = len(a_teach) + len(teach)
+        cost_t = sum(t["cost_usd"] for t in a_teach) + sum(r["cost_usd"] for _, r in teach)
+        check("ledger rows == all teacher tickets; training_examples written", te[0] == n_t and tr == n_t, f"ledger={te} train={tr} teacher_tickets={n_t}")
+        check("ledger cost == sum of ticket cost_usd", abs(te[1] - cost_t) < 1e-9, f"{te[1]} vs {cost_t}")
 
         # offline: uncertain tickets must go to review, never to the cloud
         mr = c.post("/api/mode/offline", json={"offline": True})
@@ -209,7 +212,8 @@ def main():
         check("offline: health + SSE mode event", mr.status_code == 200 and h2["mode"] == "offline" and sse.counts["mode"] >= 2,
               f"{h2['mode']} mode_events={sse.counts['mode']}")
         out_off = []
-        for d in demo[:a.phase_b_n]:
+        # tickets that were uncertain online (they escalated above) are the ones that must go to review offline
+        for d in [x for x, _ in teach] + demo[:a.phase_b_n]:
             r = c.post("/api/classify", json={"text": d["text"]}).json()
             out_off.append(r)
             if r["source"] == "review":
