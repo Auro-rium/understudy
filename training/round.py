@@ -127,6 +127,7 @@ def run_round(backend, trainer: Optional[Trainer] = None, trainer_name: str = "m
         ev = {"category_acc": res["category_acc"], "category_macro_f1": res["category_macro_f1"],
               "priority_acc": res["priority_acc"]}
         if promoted:
+            emit({"type": "promoting", "round": rnd})
             backend.promote(rnd, tr.adapter_path, version, ev)
     finally:
         if paused:

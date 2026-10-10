@@ -15,7 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 from backend import metrics
 from backend.classifiers import BaseClassifier, make_classifier
 from backend.db import DB
-from backend.events import Broadcaster
+from backend.events import Broadcaster, train_payload
 from backend.holder import ModelHolder
 from backend.router import ModeState, Router
 from backend.schemas import (CATEGORIES, TEAMS, ClassifyRequest, ClassifyResult, Health, MetricsSummary,
@@ -58,12 +58,21 @@ def default_teacher():
 
 
 def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = None, teacher="auto",
-               probe_interval_s: Optional[float] = None) -> FastAPI:
+               probe_interval_s: Optional[float] = None, load_promoted: bool = True) -> FastAPI:
     db = db or DB()
     classifier = classifier or make_classifier()
     teacher = default_teacher() if teacher == "auto" else teacher
     events = Broadcaster()
-    ctx = AppContext(db, ModelHolder(classifier, "base"), teacher, events)
+    version = "base"
+    if load_promoted:  # a restart keeps the promoted model instead of falling back to base
+        from training.db_backend import latest_promoted_adapter
+        cur = latest_promoted_adapter(db)
+        if cur:
+            try:
+                classifier, version = classifier.with_adapter(cur[1]), cur[0]
+            except Exception as e:  # e.g. ServerClassifier cannot apply adapters
+                print(f"[backend] could not load promoted adapter {cur[0]}: {e!r}; serving base")
+    ctx = AppContext(db, ModelHolder(classifier, version), teacher, events)
     interval = probe_interval_s if probe_interval_s is not None else float(os.environ.get("HEALTH_PROBE_S", 10))
 
     async def probe_loop():
@@ -148,16 +157,17 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
             raise HTTPException(501, f"training.round.run_round_async is not available yet ({e!r})")
         from backend.round_backend import AppRoundBackend
         job_id = uuid.uuid4().hex[:12]
+        previous = ctx.holder.version
 
         def on_event(e: dict):  # called from the training thread
             t = e.get("type")
             if t == "round_complete":
                 ctx.jobs[job_id] = "done"
-                events.publish("round_complete", {"job_id": job_id, **e})
+                events.publish("round_complete", {"job_id": job_id, **e, "previous_model_version": previous})
             else:
                 if t == "round_failed":
                     ctx.jobs[job_id] = f"error: {e.get('error')}"
-                events.publish("train_progress", {"job_id": job_id, **e})
+                events.publish("train_progress", train_payload(e, job_id))
 
         ctx.jobs[job_id] = "running"
         try:

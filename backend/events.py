@@ -49,3 +49,43 @@ class Broadcaster:
                 self._loop.call_soon_threadsafe(self._put, q, msg)
             else:
                 self._put(q, msg)
+
+
+# Overall progress bands for the 4 stages the frontend draws (collect -> train -> evaluate -> promote).
+_BANDS = {"collect": (0.0, 0.05), "train": (0.05, 0.8), "evaluate": (0.8, 0.95), "promote": (0.95, 1.0)}
+
+
+def _frac(done, total) -> float:
+    try:
+        return min(1.0, max(0.0, float(done) / float(total))) if total else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def train_payload(e: dict, job_id: str) -> dict:
+    """Round-runner event -> `train_progress` SSE payload {job_id, round, stage, progress 0..1, ...}."""
+    t = e.get("type")
+    out = {"job_id": job_id, "round": e.get("round", 0)}
+    if t == "round_failed":
+        return {**out, "stage": "train", "progress": 0.0, "error": e.get("error", "Training round failed")}
+    msg = None
+    if t == "round_start":
+        stage, f, msg = "collect", 0.0, f"{e.get('examples', 0)} training examples"
+    elif t == "train_progress":
+        stage, f = "train", _frac(e.get("step"), e.get("total_steps"))
+        if e.get("kind") == "val":
+            msg = f"validation loss {e.get('loss')}"
+        elif "loss" in e:
+            out["loss"] = e["loss"]
+        out["step"], out["total_steps"] = e.get("step"), e.get("total_steps")
+    elif t == "eval_progress":
+        stage, f, msg = "evaluate", _frac(e.get("done"), e.get("total")), "scoring the test set"
+    elif t == "promoting":
+        stage, f, msg = "promote", 0.0, "applying the new adapter"
+    else:
+        stage, f, msg = "train", 0.0, str(t)
+    lo, hi = _BANDS[stage]
+    out.update(stage=stage, progress=round(lo + (hi - lo) * f, 4))
+    if msg:
+        out["message"] = msg
+    return out
