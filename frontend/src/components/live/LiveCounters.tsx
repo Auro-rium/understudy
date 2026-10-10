@@ -10,7 +10,7 @@ import { ModelSwitch } from "./ModelSwitch";
 function VersionTile({ version, mode, pulse }: { version: string; mode: "online" | "offline"; pulse: boolean }) {
   const reduce = useReducedMotion();
   return (
-    <div className="relative pl-5">
+    <div className="@container relative pl-5">
       <span aria-hidden className="absolute bottom-1 left-0 top-1 w-1 rounded-full bg-spot" />
       <p className="text-lg text-ink-2">Model serving</p>
       <div className="mt-0.5 inline-block rounded-xl" style={{ perspective: 600 }}>
@@ -22,7 +22,7 @@ function VersionTile({ version, mode, pulse }: { version: string; mode: "online"
               animate={reduce ? { opacity: 1 } : { opacity: 1, rotateX: 0, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, rotateX: 80, y: -12 }}
               transition={{ duration: 0.35, ease: "easeOut" }}
-              className="num display px-1 text-[clamp(3rem,2rem+4.5vw,6rem)] font-semibold leading-[1.02] text-ink 2xl:text-[4.75rem]"
+              className="num display whitespace-nowrap px-1 text-[clamp(2.25rem,20cqw,5rem)] font-semibold leading-[1.02] text-ink"
               style={{ transformOrigin: "50% 50%" }}
             >
               {version || "–"}
@@ -61,7 +61,7 @@ export function LiveCounters({ pulse }: { pulse: boolean }) {
   return (
     <section aria-label="Headline numbers" className="grid gap-x-10 gap-y-8 sm:grid-cols-2 xl:grid-cols-4 2xl:gap-y-0">
       <StatTile
-        valueClassName="2xl:text-[4.75rem]"
+        fit
         label="Handled locally"
         accent="local"
         value={
@@ -78,14 +78,14 @@ export function LiveCounters({ pulse }: { pulse: boolean }) {
         }
       />
       <StatTile
-        valueClassName="2xl:text-[4.75rem]"
+        fit
         label="Cloud cost so far"
         accent="teacher"
         value={<AnimatedNumber value={s.cost_usd_total} format={fmtUsd} />}
         sub="paid to the cloud teacher"
       />
       <StatTile
-        valueClassName="2xl:text-[4.75rem]"
+        fit
         label="Cost avoided"
         accent="save"
         value={<AnimatedNumber value={s.cost_avoided_usd} format={fmtUsd} />}
