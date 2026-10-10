@@ -3,6 +3,7 @@
 import { Explainers } from "@/components/training/Explainers";
 import { LoopPanel } from "@/components/training/LoopPanel";
 import { RoundCards } from "@/components/training/RoundCards";
+import { ScoreChart } from "@/components/training/ScoreChart";
 import { SummaryStrip } from "@/components/training/SummaryStrip";
 
 export default function TrainingPage() {
@@ -13,8 +14,8 @@ export default function TrainingPage() {
           How it learns
         </h1>
         <p className="mt-3 max-w-3xl text-xl text-ink-2">
-          Every teacher answer becomes a training example. Each round trains a small adapter, tests it on held-out
-          tickets, and only goes live if it passes the gate.
+          Each round trains a small LoRA adapter on this Mac, scores it, and only promotes it if it beats the model
+          already in use.
         </p>
 
         <div className="mt-8">
@@ -25,7 +26,11 @@ export default function TrainingPage() {
           <SummaryStrip />
         </div>
 
-        <section aria-label="Training rounds" className="mt-8">
+        <section aria-label="Scores across rounds" className="mt-12">
+          <ScoreChart />
+        </section>
+
+        <section aria-label="Training rounds" className="mt-12">
           <h2 className="mb-4 text-2xl font-semibold text-ink">Training rounds</h2>
           <RoundCards />
         </section>

@@ -71,14 +71,14 @@ const WIDE: LayoutDef = {
   subSize: 19,
   labelSize: 19,
   nodes: [
-    { id: "ticket", x: 20, y: 118, w: 200, h: 88, title: "Ticket", sub: "Gig worker message", color: "neutral" },
-    { id: "router", x: 290, y: 118, w: 200, h: 88, title: "Router", sub: "Checks confidence", color: "neutral" },
-    { id: "local", x: 590, y: 18, w: 240, h: 88, title: "Local Gemma", sub: "Free and fast", color: "local" },
+    { id: "ticket", x: 20, y: 118, w: 200, h: 88, title: "Ticket", sub: "Support message in", color: "neutral" },
+    { id: "router", x: 290, y: 118, w: 200, h: 88, title: "Router", sub: "Scores confidence", color: "neutral" },
+    { id: "local", x: 590, y: 18, w: 240, h: 88, title: "Local model", sub: "Free and fast", color: "local" },
     { id: "teacher", x: 590, y: 218, w: 240, h: 88, title: "Cloud teacher", sub: "Costs money, slower", color: "teacher" },
     { id: "data", x: 900, y: 218, w: 280, h: 88, title: "Teacher answers", sub: "become training data", color: "teacher" },
-    { id: "lora", x: 900, y: 400, w: 280, h: 88, title: "LoRA training round", sub: "Trains small adapters", color: "local" },
-    { id: "gate", x: 590, y: 400, w: 240, h: 88, title: "Evaluation gate", sub: "Held-out tickets", color: "spot" },
-    { id: "swap", x: 290, y: 400, w: 200, h: 88, title: "Hot-swap", sub: "Better model live", color: "local" },
+    { id: "lora", x: 900, y: 400, w: 280, h: 88, title: "LoRA training", sub: "Trains on this Mac (MLX)", color: "local" },
+    { id: "gate", x: 590, y: 400, w: 240, h: 88, title: "Evaluation gate", sub: "Macro-F1 must improve", color: "spot" },
+    { id: "swap", x: 290, y: 400, w: 200, h: 88, title: "Promote", sub: "Serve new adapter", color: "local" },
   ],
   edges: [
     { id: "e1", d: "M220 162 H284", color: "neutral", stages: ["routing"] },
@@ -102,7 +102,7 @@ const WIDE: LayoutDef = {
       d: "M1040 306 V394",
       color: "teacher",
       stages: ["train"],
-      label: { x: 1022, y: 356, text: "labelled examples", anchor: "end" },
+      label: { x: 1022, y: 356, text: "training examples", anchor: "end" },
     },
     { id: "e6", d: "M900 444 H836", color: "local", stages: ["evaluate"] },
     { id: "e7", d: "M590 444 H496", color: "spot", stages: ["promote"] },
@@ -111,7 +111,7 @@ const WIDE: LayoutDef = {
       d: "M390 394 V212",
       color: "local",
       stages: ["promote"],
-      label: { x: 404, y: 340, text: "new model serves tickets", anchor: "start" },
+      label: { x: 404, y: 340, text: "new adapter routes tickets", anchor: "start" },
     },
   ],
 };
@@ -124,14 +124,14 @@ const TALL: LayoutDef = {
   subSize: 16,
   labelSize: 16,
   nodes: [
-    { id: "ticket", x: 65, y: 10, w: 280, h: 76, title: "Ticket", sub: "Gig worker message", color: "neutral" },
-    { id: "router", x: 65, y: 138, w: 280, h: 76, title: "Router", sub: "Checks confidence", color: "neutral" },
-    { id: "local", x: 20, y: 266, w: 170, h: 76, title: "Local Gemma", sub: "When confident", color: "local" },
+    { id: "ticket", x: 65, y: 10, w: 280, h: 76, title: "Ticket", sub: "Support message in", color: "neutral" },
+    { id: "router", x: 65, y: 138, w: 280, h: 76, title: "Router", sub: "Scores confidence", color: "neutral" },
+    { id: "local", x: 20, y: 266, w: 170, h: 76, title: "Local model", sub: "When confident", color: "local" },
     { id: "teacher", x: 210, y: 266, w: 170, h: 76, title: "Cloud teacher", sub: "When unsure", color: "teacher" },
     { id: "data", x: 65, y: 394, w: 280, h: 76, title: "Teacher answers", sub: "become training data", color: "teacher" },
-    { id: "lora", x: 65, y: 522, w: 280, h: 76, title: "LoRA training round", sub: "Trains small adapters", color: "local" },
-    { id: "gate", x: 65, y: 650, w: 280, h: 76, title: "Evaluation gate", sub: "Held-out tickets", color: "spot" },
-    { id: "swap", x: 65, y: 778, w: 280, h: 76, title: "Hot-swap", sub: "Better model goes live", color: "local" },
+    { id: "lora", x: 65, y: 522, w: 280, h: 76, title: "LoRA training", sub: "Trains on this Mac (MLX)", color: "local" },
+    { id: "gate", x: 65, y: 650, w: 280, h: 76, title: "Evaluation gate", sub: "Macro-F1 must improve", color: "spot" },
+    { id: "swap", x: 65, y: 778, w: 280, h: 76, title: "Promote", sub: "Serve new adapter", color: "local" },
   ],
   edges: [
     { id: "e1", d: "M205 86 V132", color: "neutral", stages: ["routing"] },
@@ -153,9 +153,9 @@ const STAGE_LABEL: Record<ActiveStage, string> = {
   idle: "Idle",
   routing: "Routing tickets",
   collect: "Teacher answers becoming training data",
-  train: "LoRA training",
+  train: "LoRA training on this Mac",
   evaluate: "Evaluation gate",
-  promote: "Hot-swap",
+  promote: "Promoting the new adapter",
 };
 
 export function stageLabel(stage: ActiveStage): string {
@@ -170,7 +170,7 @@ function Layout({ layout, stage, reduce }: { layout: LayoutDef; stage: ActiveSta
       viewBox={`0 0 ${layout.vbW} ${layout.vbH}`}
       className="h-auto w-full"
       role="img"
-      aria-label="Loop diagram: a ticket reaches the router, which answers with the local Gemma model when confident or asks the cloud teacher when unsure. Teacher answers become training data for a LoRA round, an evaluation gate decides whether the new model is promoted, and a hot-swap returns the better model to the router."
+      aria-label="Loop diagram: a ticket reaches the router, which sends it to the local model when confident or to the cloud teacher when unsure. Teacher answers become training data for a LoRA training round run on this Mac. An evaluation gate promotes the new adapter only if macro-F1 improves, and the promoted model then handles routing."
     >
       <defs>
         {(Object.keys(COLOR) as ColorKey[]).map((c) => (

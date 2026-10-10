@@ -6,7 +6,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import type { LossPoint } from "@/lib/types";
 
 const LINE = "#3987e5";
-const AXIS = { fontSize: 15, fill: "#8d92a8" } as const;
+const AXIS = { fontSize: 16, fill: "#8d92a8" } as const;
 
 interface LossChartProps {
   data: LossPoint[];
@@ -14,10 +14,12 @@ interface LossChartProps {
   mode: "draw" | "live";
   /** fixed x-axis end (live mode: total steps) */
   xMax?: number;
+  /** shared y-axis ceiling so charts of different rounds are comparable */
+  yMax?: number;
   height?: number;
 }
 
-export function LossChart({ data, mode, xMax, height = 240 }: LossChartProps) {
+export function LossChart({ data, mode, xMax, yMax, height = 240 }: LossChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "0px 0px -10% 0px" });
   const reduce = useReducedMotion();
@@ -31,7 +33,7 @@ export function LossChart({ data, mode, xMax, height = 240 }: LossChartProps) {
       role="img"
       aria-label={
         data.length
-          ? `Training loss over ${data.length} points, from ${data[0].loss.toFixed(2)} to ${data[data.length - 1].loss.toFixed(2)}`
+          ? `Training loss over ${data.length} recorded points, step ${data[0].step} to step ${data[data.length - 1].step}, from ${data[0].loss.toFixed(2)} to ${data[data.length - 1].loss.toFixed(2)}`
           : "Training loss, waiting for the first step"
       }
     >
@@ -50,7 +52,7 @@ export function LossChart({ data, mode, xMax, height = 240 }: LossChartProps) {
               label={{ value: "training step", position: "insideBottomRight", offset: -2, style: AXIS }}
             />
             <YAxis
-              domain={[0, "auto"]}
+              domain={[0, yMax ?? "auto"]}
               tick={AXIS}
               tickLine={false}
               axisLine={false}
@@ -72,10 +74,10 @@ export function LossChart({ data, mode, xMax, height = 240 }: LossChartProps) {
               formatter={(v) => [typeof v === "number" ? v.toFixed(3) : String(v), "Loss"]}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="loss"
               stroke={LINE}
-              strokeWidth={2}
+              strokeWidth={2.25}
               dot={false}
               activeDot={{ r: 4, fill: LINE, stroke: "#0b0d14" }}
               isAnimationActive={animate}
