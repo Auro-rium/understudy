@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { cx } from "@/components/ui";
+import type { ModelRow } from "./model-meta";
 
 /** Shared chart text: always a text token, never a series colour. */
 export const AXIS_TEXT = "var(--text-2)";
@@ -41,4 +43,30 @@ export interface AxisTickProps {
   x?: number | string;
   y?: number | string;
   payload?: { value: string | number };
+}
+
+/** Status in words (with a glyph), so promoted / not promoted never rests on colour alone. */
+export function StatusTag({ row, className }: { row: ModelRow; className?: string }) {
+  const tone =
+    row.status === "current"
+      ? "border-spot text-spot"
+      : row.status === "rejected"
+        ? "border-bad/70 text-bad"
+        : row.status === "superseded"
+          ? "border-line-strong text-ink-2"
+          : "border-line text-ink-3";
+  const glyph =
+    row.status === "current" ? "●" : row.status === "rejected" ? "✕" : row.status === "superseded" ? "✓" : "";
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded border px-1.5 py-px text-base font-semibold leading-6",
+        tone,
+        className,
+      )}
+    >
+      {glyph ? <span aria-hidden>{glyph}</span> : null}
+      {row.tag}
+    </span>
+  );
 }

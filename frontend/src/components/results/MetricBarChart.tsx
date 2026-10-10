@@ -1,7 +1,7 @@
 "use client";
 
 import { useReducedMotion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -15,26 +15,17 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import { Card } from "@/components/ui";
-import { fmtDelta } from "@/lib/format";
-import type { EvalCompare } from "@/lib/types";
-import {
-  AXIS_LINE,
-  AXIS_TEXT,
-  GRID,
-  TooltipShell,
-  wrapLabel,
-  type AxisTickProps,
-} from "./chart-parts";
-import { METRICS, buildRows, type MetricDef, type MetricKey, type ModelRow } from "./model-meta";
+import { AXIS_LINE, AXIS_TEXT, GRID, MUTED_TEXT, TooltipShell, type AxisTickProps } from "./chart-parts";
+import { METRICS, baseRow, type MetricDef, type MetricKey, type ModelRow } from "./model-meta";
 import { Segmented } from "./Segmented";
 import { useNarrow } from "./useNarrow";
 
 interface Datum {
   name: string;
+  label: string;
   value: number;
   color: string;
-  kind: ModelRow["kind"];
-  role: string;
+  row: ModelRow;
 }
 
 /** Round a max up to 1 / 2 / 2.5 / 5 x 10^k so the value axis ends on a clean number. */
@@ -45,34 +36,30 @@ function niceCeil(x: number): number {
   return 10 * p;
 }
 
-function ModelTick({
-  x = 0,
-  y = 0,
-  payload,
-  rows,
-  narrow,
-}: AxisTickProps & { rows: ModelRow[]; narrow: boolean }) {
+function ModelTick({ x = 0, y = 0, payload, rows }: AxisTickProps & { rows: ModelRow[] }) {
   const name = String(payload?.value ?? "");
   const row = rows.find((r) => r.model.name === name);
-  const lines = wrapLabel(name, narrow ? 12 : 22, 2);
   const px = Number(x);
   const py = Number(y);
-  const headline = row?.kind === "router";
+  const label = row?.label ?? name;
   return (
     <g>
-      <title>{name}</title>
-      {row ? <circle cx={px - 6} cy={py} r={5} fill={row.color} /> : null}
+      <title>{row ? `${label}: ${row.tag}` : name}</title>
+      {row ? <circle cx={px - 6} cy={py} r={6} fill={row.color} /> : null}
       <text
-        x={px - 18}
+        x={px - 20}
         y={py}
         textAnchor="end"
-        style={{ fill: AXIS_TEXT, fontSize: narrow ? 14 : 16, fontWeight: headline ? 700 : 400 }}
+        style={{ fill: AXIS_TEXT, fontSize: 17, fontWeight: row?.isCurrent ? 700 : 500 }}
       >
-        {lines.map((l, i) => (
-          <tspan key={i} x={px - 18} dy={i === 0 ? (lines.length > 1 ? "-0.35em" : "0.35em") : "1.15em"}>
-            {l}
+        <tspan x={px - 20} dy={row ? "-0.2em" : "0.35em"}>
+          {label}
+        </tspan>
+        {row ? (
+          <tspan x={px - 20} dy="1.3em" style={{ fill: MUTED_TEXT, fontSize: 16, fontWeight: 400 }}>
+            {row.tag}
           </tspan>
-        ))}
+        ) : null}
       </text>
     </g>
   );
@@ -86,40 +73,42 @@ function MetricTooltip({
 }: Partial<TooltipContentProps> & { metric: MetricDef; rows: ModelRow[] }) {
   if (!active || !payload || payload.length === 0) return null;
   const d = payload[0].payload as Datum;
-  const base = rows.find((r) => r.kind === "base");
-  const showDelta = metric.isPct && base && d.kind !== "base";
+  const base = baseRow(rows);
+  const delta = base && d.row.kind !== "base" ? metric.delta(d.value, base.model[metric.key]) : null;
   return (
-    <TooltipShell title={d.name}>
-      <p className="text-ink-3">{d.role}</p>
+    <TooltipShell title={d.label}>
+      <p className="text-ink-2">{d.row.tag}</p>
+      <p className="text-ink-3">{d.row.role}</p>
       <p className="mt-1 text-ink">
         {metric.label}: <strong className="num">{metric.format(d.value)}</strong>
       </p>
-      {showDelta ? (
+      {delta && base ? (
         <p className="num text-ink-2">
-          {fmtDelta((d.value - base.model[metric.key]) * 100)} vs {base.model.name}
+          {delta} vs {base.label.toLowerCase()}
         </p>
       ) : null}
+      {d.row.reason ? <p className="mt-1 text-ink-3">{d.row.reason}</p> : null}
     </TooltipShell>
   );
 }
 
-export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
+export function MetricBarChart({ rows }: { rows: ModelRow[] }) {
   const reduce = useReducedMotion();
   const narrow = useNarrow();
-  const [metricKey, setMetricKey] = useState<MetricKey>("category_acc");
+  const [metricKey, setMetricKey] = useState<MetricKey>("category_macro_f1");
   const metric = METRICS.find((m) => m.key === metricKey) ?? METRICS[0];
-  const rows = useMemo(() => buildRows(evalCompare), [evalCompare]);
 
   const data: Datum[] = rows.map((r) => ({
     name: r.model.name,
+    label: r.label,
     value: r.model[metric.key],
     color: r.color,
-    kind: r.kind,
-    role: r.role,
+    row: r,
   }));
+  const allZero = data.length > 0 && data.every((d) => d.value === 0);
   const max = Math.max(0, ...data.map((d) => d.value));
   const domainMax = metric.isPct ? 1 : niceCeil(max);
-  const height = rows.length * 50 + 56;
+  const height = rows.length * 62 + 56;
 
   return (
     <Card
@@ -138,7 +127,8 @@ export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
         {rows.map((r) => (
           <li key={r.model.name} className="flex items-center gap-2">
             <span aria-hidden className="size-3 rounded-sm" style={{ background: r.color }} />
-            {r.model.name}
+            {r.label}
+            <span className="text-ink-3">({r.tag.toLowerCase()})</span>
           </li>
         ))}
       </ul>
@@ -153,7 +143,7 @@ export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
             key={metric.key}
             data={data}
             layout="vertical"
-            margin={{ top: 4, right: narrow ? 56 : 84, bottom: 4, left: 0 }}
+            margin={{ top: 4, right: narrow ? 64 : 90, bottom: 4, left: 0 }}
             barCategoryGap="28%"
             style={{ overflow: "visible" }}
           >
@@ -165,17 +155,17 @@ export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              tick={{ fill: AXIS_TEXT, fontSize: 14 }}
+              tick={{ fill: AXIS_TEXT, fontSize: 16 }}
               interval="preserveStartEnd"
             />
             <YAxis
               type="category"
               dataKey="name"
-              width={narrow ? 120 : 220}
+              width={narrow ? 150 : 230}
               tickLine={false}
               axisLine={{ stroke: AXIS_LINE }}
               interval={0}
-              tick={<ModelTick rows={rows} narrow={narrow} />}
+              tick={<ModelTick rows={rows} />}
             />
             <Tooltip
               cursor={{ fill: "rgba(242,240,234,0.05)" }}
@@ -184,7 +174,7 @@ export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
             />
             <Bar
               dataKey="value"
-              maxBarSize={24}
+              maxBarSize={26}
               radius={[0, 4, 4, 0]}
               isAnimationActive={!reduce}
               animationDuration={800}
@@ -209,7 +199,7 @@ export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
                       x={x + Math.max(0, width) + 10}
                       y={y + h / 2}
                       dy="0.35em"
-                      style={{ fill: "var(--text)", fontSize: narrow ? 14 : 17, fontWeight: 600 }}
+                      style={{ fill: "var(--text)", fontSize: narrow ? 16 : 18, fontWeight: 600 }}
                     >
                       {metric.format(value)}
                     </text>
@@ -220,9 +210,11 @@ export function MetricBarChart({ evalCompare }: { evalCompare: EvalCompare }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-2 text-sm text-ink-3">
-        Blue shades are the trained versions, lighter = older, darker = newer. Latency and cost are
-        shown one at a time because they use different units.
+      <p className="mt-2 text-base text-ink-3">
+        Grey is the base model; blue shades are the training rounds, lighter = earlier, darker = later.
+        Colour marks the round, not how well it did; the status next to each name says whether it was
+        promoted. Metrics are shown one at a time because they use different units.
+        {allZero ? ` Every model scores ${metric.format(0)} on this metric, so there are no bars to compare.` : ""}
       </p>
     </Card>
   );

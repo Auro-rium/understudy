@@ -14,8 +14,8 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import { Card, cx } from "@/components/ui";
-import { categoryLabel } from "@/lib/categories";
-import { fmtDelta, fmtPct } from "@/lib/format";
+import { categoryLabel, categoryOrder } from "@/lib/categories";
+import { fmtDelta, fmtInt, fmtPct } from "@/lib/format";
 import type { EvalCompare } from "@/lib/types";
 import {
   AXIS_LINE,
@@ -25,27 +25,18 @@ import {
   wrapLabel,
   type AxisTickProps,
 } from "./chart-parts";
-import { buildRows, latestTrained, type ModelRow } from "./model-meta";
+import { baseRow, currentRow, type ModelRow } from "./model-meta";
 import { useNarrow } from "./useNarrow";
-
-interface Series {
-  id: string;
-  /** model name as in per_category_f1 */
-  name: string;
-  /** legend wording, e.g. "Latest trained (v2)" */
-  label: string;
-  color: string;
-}
 
 function CategoryTick({ x = 0, y = 0, payload, narrow }: AxisTickProps & { narrow: boolean }) {
   const name = String(payload?.value ?? "");
-  const lines = wrapLabel(name, narrow ? 14 : 24, 2);
+  const lines = wrapLabel(name, narrow ? 13 : 24, 2);
   const px = Number(x);
   const py = Number(y);
   return (
     <g>
       <title>{name}</title>
-      <text x={px - 10} y={py} textAnchor="end" style={{ fill: AXIS_TEXT, fontSize: narrow ? 14 : 16 }}>
+      <text x={px - 10} y={py} textAnchor="end" style={{ fill: AXIS_TEXT, fontSize: 16 }}>
         {lines.map((l, i) => (
           <tspan key={i} x={px - 10} dy={i === 0 ? (lines.length > 1 ? "-0.35em" : "0.35em") : "1.15em"}>
             {l}
@@ -56,24 +47,28 @@ function CategoryTick({ x = 0, y = 0, payload, narrow }: AxisTickProps & { narro
   );
 }
 
-type Datum = { category: string } & Record<string, number | string | undefined>;
+/** One row of chart data: category display label plus one F1 value per model name. */
+type Datum = { key: string; category: string } & Record<string, number | string | undefined>;
 
 function F1Tooltip({
   active,
   payload,
   series,
-}: Partial<TooltipContentProps> & { series: Series[] }) {
+}: Partial<TooltipContentProps> & { series: ModelRow[] }) {
   if (!active || !payload || payload.length === 0) return null;
   const d = payload[0].payload as Datum;
   return (
     <TooltipShell title={d.category}>
       <ul className="space-y-1">
         {series.map((s) => {
-          const v = d[s.id];
+          const v = d[s.model.name];
           return (
-            <li key={s.id} className="flex items-center gap-2.5 text-ink-2">
+            <li key={s.model.name} className="flex items-center gap-2.5 text-ink-2">
               <span aria-hidden className="size-3 flex-none rounded-sm" style={{ background: s.color }} />
-              <span className="flex-1">{s.label}</span>
+              <span className="flex-1">
+                {s.label}
+                <span className="text-ink-3"> ({s.tag.toLowerCase()})</span>
+              </span>
               <strong className="num text-ink">{typeof v === "number" ? fmtPct(v, 1) : "–"}</strong>
             </li>
           );
@@ -83,88 +78,117 @@ function F1Tooltip({
   );
 }
 
-export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
+export function CategoryF1Chart({ evalCompare, rows }: { evalCompare: EvalCompare; rows: ModelRow[] }) {
   const reduce = useReducedMotion();
   const narrow = useNarrow();
   const [asTable, setAsTable] = useState(false);
+  const [picked, setPicked] = useState<string[] | null>(null);
 
-  const rows = useMemo(() => buildRows(evalCompare), [evalCompare]);
   const per = evalCompare.per_category_f1;
+  /** Models that actually have per-category scores; the rest cannot be drawn. */
+  const available = useMemo(() => rows.filter((r) => per[r.model.name]), [rows, per]);
+  const cats = useMemo(() => categoryOrder(evalCompare), [evalCompare]);
 
-  const { series, data, callouts } = useMemo(() => {
-    const base: ModelRow | undefined = rows.find((r) => r.kind === "base");
-    const latest = latestTrained(rows);
-    const teacher: ModelRow | undefined = rows.find((r) => r.kind === "teacher");
+  // Default: the base and the model in use. The reader can add any other model.
+  const defaults = useMemo(() => {
+    const names = new Set<string>();
+    const b = baseRow(available);
+    const c = currentRow(available);
+    if (b) names.add(b.model.name);
+    if (c) names.add(c.model.name);
+    if (names.size === 0 && available[0]) names.add(available[0].model.name);
+    return names;
+  }, [available]);
 
-    const s: Series[] = [];
-    const add = (r: ModelRow | undefined, id: string, label: string) => {
-      if (r && per[r.model.name]) s.push({ id, name: r.model.name, label, color: r.color });
-    };
-    add(base, "base", `${base?.model.name ?? "Base"} (before training)`);
-    add(latest, "latest", `${latest?.model.name ?? "Latest"} (latest trained)`);
-    add(teacher, "teacher", `${teacher?.model.name ?? "Teacher"} (cloud)`);
+  const selected = useMemo(() => {
+    const valid = picked ? picked.filter((n) => available.some((r) => r.model.name === n)) : [];
+    const set = valid.length > 0 ? new Set(valid) : defaults;
+    return available.filter((r) => set.has(r.model.name));
+  }, [picked, available, defaults]);
 
-    // Category names come from the data itself, in the order the API sent them.
-    const cats: string[] = [];
-    for (const ser of s) for (const c of Object.keys(per[ser.name])) if (!cats.includes(c)) cats.push(c);
+  const data: Datum[] = useMemo(
+    () =>
+      cats.map((c) => {
+        const row: Datum = { key: c, category: categoryLabel(c) };
+        for (const r of selected) row[r.model.name] = per[r.model.name]?.[c];
+        return row;
+      }),
+    [cats, selected, per],
+  );
 
-    const d: Datum[] = cats.map((c) => {
-      const row: Datum = { category: categoryLabel(c) };
-      for (const ser of s) row[ser.id] = per[ser.name]?.[c];
-      return row;
-    });
-
-    // Callouts, computed from the data only.
+  const callouts = useMemo(() => {
     const out: string[] = [];
-    const sb = s.find((x) => x.id === "base");
-    const sl = s.find((x) => x.id === "latest");
-    const st = s.find((x) => x.id === "teacher");
-    if (sb && sl) {
+    const b = baseRow(available);
+    const cur = currentRow(available);
+    if (b && cur && b !== cur) {
       let bestC = "";
       let bestGain = -Infinity;
       for (const c of cats) {
-        const b = per[sb.name]?.[c];
-        const l = per[sl.name]?.[c];
-        if (typeof b === "number" && typeof l === "number" && (l - b) * 100 > bestGain) {
-          bestGain = (l - b) * 100;
+        const bv = per[b.model.name]?.[c];
+        const cv = per[cur.model.name]?.[c];
+        if (typeof bv === "number" && typeof cv === "number" && (cv - bv) * 100 > bestGain) {
+          bestGain = (cv - bv) * 100;
           bestC = c;
         }
       }
-      if (bestC && bestGain > 0) {
+      if (bestC) {
         out.push(
-          `Biggest improvement: ${categoryLabel(bestC)}, ${fmtDelta(bestGain)} from ${sb.name} to ${sl.name} (${fmtPct(
-            per[sb.name][bestC],
-            1,
-          )} to ${fmtPct(per[sl.name][bestC], 1)} F1).`,
+          bestGain > 0
+            ? `Biggest gain: ${categoryLabel(bestC)}, ${fmtDelta(bestGain)} from ${b.label.toLowerCase()} to ${cur.label.toLowerCase()} (${fmtPct(
+                per[b.model.name][bestC],
+                1,
+              )} to ${fmtPct(per[cur.model.name][bestC], 1)} F1).`
+            : `No category has improved over ${b.label.toLowerCase()}.`,
         );
-      } else if (bestC) {
-        out.push(`No category has improved over ${sb.name} yet.`);
       }
     }
-    if (sl && st) {
-      let gapC = "";
-      let gap = 0;
+    if (cur) {
+      let weakC = "";
+      let weak = Infinity;
       for (const c of cats) {
-        const l = per[sl.name]?.[c];
-        const t = per[st.name]?.[c];
-        if (typeof l === "number" && typeof t === "number" && (t - l) * 100 > gap) {
-          gap = (t - l) * 100;
-          gapC = c;
+        const v = per[cur.model.name]?.[c];
+        if (typeof v === "number" && v < weak) {
+          weak = v;
+          weakC = c;
         }
       }
-      if (gapC) {
-        out.push(`Largest remaining gap to the teacher: ${categoryLabel(gapC)}, ${fmtDelta(-gap)} (${sl.name} vs ${st.name}).`);
+      if (weakC) {
+        out.push(`Weakest category for ${cur.label.toLowerCase()}: ${categoryLabel(weakC)} at ${fmtPct(weak, 1)} F1.`);
       }
     }
-    return { series: s, data: d, callouts: out };
-  }, [rows, per]);
+    return out;
+  }, [available, cats, per]);
 
-  if (series.length === 0 || data.length === 0) return null;
+  // How many test tickets each category has (true-class row totals of the confusion matrix).
+  const supportNote = useMemo(() => {
+    const lead = selected[selected.length - 1];
+    const m = lead ? evalCompare.confusion[lead.model.name] : undefined;
+    if (!m || m.length === 0) return "";
+    const totals = m.map((r) => r.reduce((a, b) => a + b, 0)).filter((t) => t > 0);
+    if (totals.length === 0) return "";
+    const lo = Math.min(...totals);
+    const hi = Math.max(...totals);
+    return `Each category has ${lo === hi ? fmtInt(lo) : `${fmtInt(lo)} to ${fmtInt(hi)}`} test tickets, so one or two tickets can move a category's F1 noticeably.`;
+  }, [selected, evalCompare.confusion]);
 
-  // Horizontal grouped bars (not 6 small multiples): category names are long, three series fit
-  // one shared 0-100% axis, and the reader compares all three within a category at a glance.
-  const barSize = narrow ? 14 : 20;
-  const groupH = series.length * barSize + (series.length - 1) * 2 + (narrow ? 30 : 40);
+  if (available.length === 0 || data.length === 0 || selected.length === 0) return null;
+
+  const toggle = (name: string) => {
+    const cur = new Set(selected.map((r) => r.model.name));
+    if (cur.has(name)) {
+      if (cur.size === 1) return; // keep at least one series
+      cur.delete(name);
+    } else {
+      cur.add(name);
+    }
+    setPicked(available.filter((r) => cur.has(r.model.name)).map((r) => r.model.name));
+  };
+
+  const storyName = (currentRow(selected) ?? selected[selected.length - 1]).model.name;
+
+  // Horizontal grouped bars: category names are long and every model shares one 0-100% axis.
+  const barSize = selected.length > 2 ? 14 : 20;
+  const groupH = selected.length * barSize + (selected.length - 1) * 2 + (narrow ? 30 : 36);
   const height = data.length * groupH + 48;
 
   return (
@@ -175,20 +199,39 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
           type="button"
           onClick={() => setAsTable((v) => !v)}
           aria-pressed={asTable}
-          className="min-h-9 rounded-md border border-line px-3 text-base text-ink-2 hover:border-line-strong hover:text-ink"
+          className="min-h-10 rounded-md border border-line px-3 text-base text-ink-2 hover:border-line-strong hover:text-ink"
         >
           {asTable ? "Show as chart" : "Show as table"}
         </button>
       }
     >
-      <ul className="mb-3 flex flex-wrap gap-x-5 gap-y-1.5 text-base text-ink-2" aria-label="Legend">
-        {series.map((s) => (
-          <li key={s.id} className="flex items-center gap-2">
-            <span aria-hidden className="size-3 rounded-sm" style={{ background: s.color }} />
-            {s.label}
-          </li>
-        ))}
-      </ul>
+      <div role="group" aria-label="Models to show" className="mb-3 flex flex-wrap gap-1.5">
+        {available.map((r) => {
+          const on = selected.some((s) => s.model.name === r.model.name);
+          return (
+            <button
+              key={r.model.name}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(r.model.name)}
+              className={cx(
+                "inline-flex min-h-10 items-center gap-2 rounded-md border px-3 text-base transition-colors",
+                on
+                  ? "border-ink-3 bg-surface-3 font-semibold text-ink"
+                  : "border-line text-ink-2 hover:border-line-strong hover:bg-surface-2 hover:text-ink",
+              )}
+            >
+              <span
+                aria-hidden
+                className={cx("size-3 rounded-sm", !on && "opacity-50")}
+                style={{ background: r.color }}
+              />
+              {r.label}
+              <span className={cx("font-normal", on ? "text-ink-2" : "text-ink-3")}>{r.tag.toLowerCase()}</span>
+            </button>
+          );
+        })}
+      </div>
 
       {callouts.length > 0 ? (
         <div className="mb-4 space-y-1 rounded-md border border-line bg-surface-2 px-4 py-3 text-lg text-ink">
@@ -202,30 +245,30 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
 
       {asTable ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[34rem] border-separate border-spacing-0 text-left">
-            <caption className="sr-only">F1 score per ticket category for each compared model.</caption>
+          <table className="w-full min-w-[30rem] border-separate border-spacing-0 text-left">
+            <caption className="sr-only">F1 score per ticket category for each selected model.</caption>
             <thead>
               <tr>
                 <th scope="col" className="px-3 py-2 text-base font-medium text-ink-3">
                   Category
                 </th>
-                {series.map((s) => (
-                  <th key={s.id} scope="col" className="px-3 py-2 text-right text-base font-medium text-ink-3">
-                    {s.name}
+                {selected.map((s) => (
+                  <th key={s.model.name} scope="col" className="px-3 py-2 text-right text-base font-medium text-ink-3">
+                    {s.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {data.map((d) => (
-                <tr key={d.category}>
+                <tr key={d.key}>
                   <th scope="row" className="border-t border-line px-3 py-2.5 text-left font-normal text-ink">
                     {d.category}
                   </th>
-                  {series.map((s) => {
-                    const v = d[s.id];
+                  {selected.map((s) => {
+                    const v = d[s.model.name];
                     return (
-                      <td key={s.id} className="num border-t border-line px-3 py-2.5 text-right text-ink-2">
+                      <td key={s.model.name} className="num border-t border-line px-3 py-2.5 text-right text-ink-2">
                         {typeof v === "number" ? fmtPct(v, 1) : "–"}
                       </td>
                     );
@@ -238,14 +281,14 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
       ) : (
         <div
           role="figure"
-          aria-label="F1 per ticket category for the base model, the latest trained model and the teacher. Use Show as table for exact values."
+          aria-label={`F1 per ticket category for ${selected.map((s) => s.label).join(", ")}. Use Show as table for exact values.`}
           style={{ height }}
         >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={data}
               layout="vertical"
-              margin={{ top: 4, right: narrow ? 44 : 60, bottom: 4, left: 0 }}
+              margin={{ top: 4, right: narrow ? 48 : 64, bottom: 4, left: 0 }}
               barCategoryGap="22%"
               barGap={2}
               style={{ overflow: "visible" }}
@@ -259,7 +302,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fill: AXIS_TEXT, fontSize: 15 }}
+                tick={{ fill: AXIS_TEXT, fontSize: 16 }}
               />
               <YAxis
                 type="category"
@@ -272,13 +315,13 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
               />
               <Tooltip
                 cursor={{ fill: "rgba(242,240,234,0.05)" }}
-                content={(p: TooltipContentProps) => <F1Tooltip {...p} series={series} />}
+                content={(p: TooltipContentProps) => <F1Tooltip {...p} series={selected} />}
                 isAnimationActive={false}
               />
-              {series.map((s, i) => (
+              {selected.map((s, i) => (
                 <Bar
-                  key={s.id}
-                  dataKey={s.id}
+                  key={s.model.name}
+                  dataKey={s.model.name}
                   name={s.label}
                   fill={s.color}
                   maxBarSize={barSize}
@@ -288,10 +331,10 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
                   animationBegin={i * 120}
                   animationEasing="ease-out"
                 >
-                  {/* Only the story series (latest trained) is labelled; the rest live in the tooltip/table. */}
-                  {s.id === "latest" ? (
+                  {/* Only the story series (the model in use) is labelled; the rest live in the tooltip / table. */}
+                  {s.model.name === storyName ? (
                     <LabelList
-                      dataKey={s.id}
+                      dataKey={s.model.name}
                       content={(p) => {
                         const { x, y, width, height: h, value } = p as unknown as {
                           x: number;
@@ -320,6 +363,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
           </ResponsiveContainer>
         </div>
       )}
+      {supportNote ? <p className="mt-3 text-base text-ink-3">{supportNote}</p> : null}
     </Card>
   );
 }

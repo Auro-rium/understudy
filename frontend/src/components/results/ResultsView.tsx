@@ -1,11 +1,13 @@
 "use client";
 
+import { useMemo } from "react";
 import { Card, EmptyState, Skeleton } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { CategoryF1Chart } from "./CategoryF1Chart";
 import { ComparisonTable } from "./ComparisonTable";
 import { ConfusionHeatmap } from "./ConfusionHeatmap";
 import { MetricBarChart } from "./MetricBarChart";
+import { buildRows, testSetSize } from "./model-meta";
 import { ResultsHeader } from "./ResultsHeader";
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -15,6 +17,8 @@ function Frame({ children }: { children: React.ReactNode }) {
 export function ResultsView() {
   const { state } = useStore();
   const ec = state.evalCompare;
+  const healthVersion = state.health?.model_version || state.modelVersion;
+  const rows = useMemo(() => (ec ? buildRows(ec, state.rounds, healthVersion) : []), [ec, state.rounds, healthVersion]);
 
   if (!state.loaded) {
     return (
@@ -41,7 +45,7 @@ export function ResultsView() {
         </h1>
         <EmptyState
           title="No evaluation results yet"
-          hint="Results appear here once a model has been scored on the human-labelled test set."
+          hint="Results appear here once the base model and each training round have been scored on the test set."
         />
       </Frame>
     );
@@ -49,13 +53,13 @@ export function ResultsView() {
 
   return (
     <Frame>
-      <ResultsHeader evalCompare={ec} />
+      <ResultsHeader evalCompare={ec} rows={rows} />
       <div className="grid grid-cols-1 gap-6 sm:gap-8">
-        <ComparisonTable evalCompare={ec} />
-        <MetricBarChart evalCompare={ec} />
+        <ComparisonTable rows={rows} testSize={testSetSize(ec)} />
+        <MetricBarChart rows={rows} />
         <div className="grid grid-cols-1 gap-6 sm:gap-8 2xl:grid-cols-2">
-          <CategoryF1Chart evalCompare={ec} />
-          <ConfusionHeatmap evalCompare={ec} />
+          <CategoryF1Chart evalCompare={ec} rows={rows} />
+          <ConfusionHeatmap evalCompare={ec} rows={rows} />
         </div>
       </div>
     </Frame>
