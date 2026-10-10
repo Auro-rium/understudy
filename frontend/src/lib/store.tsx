@@ -23,6 +23,7 @@ import { loadSnapshot, saveSnapshot } from "@/lib/snapshot";
 import type {
   EvalCompare,
   Health,
+  LossPoint,
   Mode,
   ReviewItem,
   Round,
@@ -73,6 +74,8 @@ export interface StoreState {
   modelVersion: string;
   streaming: boolean;
   trainProgress: TrainProgress | null;
+  /** Loss points of the running job, kept here so they survive page navigation. */
+  lossTrace: { jobId: string | null; points: LossPoint[] };
   activeStage: ActiveStage;
   lastRound: LastRound | null;
   roundMarkers: RoundMarker[];
@@ -90,6 +93,7 @@ export interface StoreActions {
 /* ---------- internals ---------- */
 
 const TICKET_CAP = 100;
+const TRACE_CAP = 2000;
 const REFRESH_MS = 4000;
 const EXTRAS_EVERY = 5; // refreshes between evalCompare/rounds reloads
 const FLUSH_MS = 150;
@@ -143,6 +147,7 @@ function initialState(): StoreState {
     modelVersion: "",
     streaming: false,
     trainProgress: null,
+    lossTrace: { jobId: null, points: [] },
     activeStage: "idle",
     lastRound: null,
     roundMarkers: [],
@@ -217,8 +222,18 @@ function reducer(state: StoreState, a: Action): StoreState {
         return { ...state, activeStage: "idle" };
       }
       return state;
-    case "train_progress":
-      return { ...state, trainProgress: a.data, activeStage: a.data.stage };
+    case "train_progress": {
+      const d = a.data;
+      let trace = state.lossTrace;
+      if (trace.jobId !== d.job_id) trace = { jobId: d.job_id, points: [] };
+      if (d.step !== undefined && d.loss !== undefined) {
+        const last = trace.points[trace.points.length - 1];
+        if (!last || d.step > last.step) {
+          trace = { jobId: trace.jobId, points: [...trace.points, { step: d.step, loss: d.loss }].slice(-TRACE_CAP) };
+        }
+      }
+      return { ...state, trainProgress: d, lossTrace: trace, activeStage: d.stage };
+    }
     case "trainStale":
       if (state.trainProgress === null) return state;
       return {

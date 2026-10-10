@@ -102,7 +102,7 @@ const WIDE: LayoutDef = {
       d: "M1040 306 V394",
       color: "teacher",
       stages: ["train"],
-      label: { x: 1030, y: 356, text: "labelled examples", anchor: "end" },
+      label: { x: 1022, y: 356, text: "labelled examples", anchor: "end" },
     },
     { id: "e6", d: "M900 444 H836", color: "local", stages: ["evaluate"] },
     { id: "e7", d: "M590 444 H496", color: "spot", stages: ["promote"] },
@@ -260,13 +260,15 @@ function Layout({ layout, stage, reduce }: { layout: LayoutDef; stage: ActiveSta
                 transition={reduce ? { duration: 0 } : { duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
               />
             ) : null}
+            <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={14} fill="#12151f" />
             <rect
               x={n.x}
               y={n.y}
               width={n.w}
               height={n.h}
               rx={14}
-              fill={`color-mix(in srgb, ${color} ${active ? 26 : 12}%, #12151f)`}
+              fill={color}
+              fillOpacity={active ? 0.26 : 0.12}
               stroke={color}
               strokeWidth={active ? 3 : 2}
               strokeOpacity={active ? 1 : 0.7}

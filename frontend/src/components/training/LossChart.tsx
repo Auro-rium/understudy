@@ -6,7 +6,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import type { LossPoint } from "@/lib/types";
 
 const LINE = "#3987e5";
-const AXIS = { fontSize: 14, fill: "#8d92a8" } as const;
+const AXIS = { fontSize: 15, fill: "#8d92a8" } as const;
 
 interface LossChartProps {
   data: LossPoint[];
