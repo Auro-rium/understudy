@@ -29,7 +29,7 @@ const STEPS = [
 export function Loop() {
   return (
     <section className="border-b border-line">
-      <div className="mx-auto max-w-[110rem] px-4 py-14 sm:px-8 sm:py-20">
+      <div className="mx-auto max-w-[120rem] px-4 py-14 sm:px-8 sm:py-20">
         <h2 className="display max-w-[30ch] text-[clamp(1.9rem,1.2rem+2.2vw,3.25rem)] font-semibold leading-[1.1] text-ink">
           Every question the teacher answers is one the local model gets to keep.
         </h2>

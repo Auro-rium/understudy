@@ -2,7 +2,7 @@
 export function Problem() {
   return (
     <section className="border-b border-line">
-      <div className="mx-auto grid max-w-[110rem] gap-10 px-4 py-14 sm:px-8 sm:py-20 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
+      <div className="mx-auto grid max-w-[120rem] gap-10 px-4 py-14 sm:px-8 sm:py-20 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
         <h2 className="display text-[clamp(1.9rem,1.2rem+2.2vw,3.25rem)] font-semibold leading-[1.1] text-ink">
           Gig workers write in when something is wrong with their pay, their account, or their safety.
         </h2>

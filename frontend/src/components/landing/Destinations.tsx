@@ -22,7 +22,7 @@ const PAGES = [
 export function Destinations() {
   return (
     <section className="border-b border-line">
-      <div className="mx-auto max-w-[110rem] px-4 py-14 sm:px-8 sm:py-20">
+      <div className="mx-auto max-w-[120rem] px-4 py-14 sm:px-8 sm:py-20">
         <h2 className="display text-[clamp(1.9rem,1.2rem+2.2vw,3.25rem)] font-semibold leading-[1.1] text-ink">
           Where to look
         </h2>

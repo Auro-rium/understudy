@@ -8,7 +8,7 @@ import { SummaryStrip } from "@/components/training/SummaryStrip";
 export default function TrainingPage() {
   return (
     <div className="stage-glow">
-      <div className="mx-auto max-w-[110rem] px-4 py-8 sm:px-8 sm:py-12">
+      <div className="mx-auto max-w-[120rem] px-4 py-8 sm:px-8 sm:py-12">
         <h1 className="display text-[clamp(2.25rem,1.5rem+3.5vw,4.5rem)] font-semibold leading-none">
           How it learns
         </h1>

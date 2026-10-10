@@ -9,7 +9,7 @@ import { MetricBarChart } from "./MetricBarChart";
 import { ResultsHeader } from "./ResultsHeader";
 
 function Frame({ children }: { children: React.ReactNode }) {
-  return <div className="mx-auto max-w-[110rem] px-4 py-8 sm:px-8 sm:py-12">{children}</div>;
+  return <div className="mx-auto max-w-[120rem] px-4 py-8 sm:px-8 sm:py-12">{children}</div>;
 }
 
 export function ResultsView() {

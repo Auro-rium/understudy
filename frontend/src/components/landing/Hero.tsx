@@ -30,7 +30,7 @@ export function Hero() {
 
   return (
     <section className="stage-glow border-b border-line">
-      <div className="mx-auto max-w-[110rem] px-4 pb-12 pt-12 sm:px-8 sm:pb-16 sm:pt-16 lg:pt-20">
+      <div className="mx-auto max-w-[120rem] px-4 pb-12 pt-12 sm:px-8 sm:pb-16 sm:pt-16 lg:pt-20">
         <motion.h1
           {...rise(0)}
           className="display max-w-[22ch] text-[clamp(2.5rem,1.2rem+4.6vw,5.75rem)] font-semibold leading-[1.02] text-ink"
