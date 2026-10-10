@@ -162,7 +162,8 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
 
   // Horizontal grouped bars (not 6 small multiples): category names are long, three series fit
   // one shared 0-100% axis, and the reader compares all three within a category at a glance.
-  const groupH = series.length * 14 + (series.length - 1) * 2 + 30;
+  const barSize = narrow ? 14 : 20;
+  const groupH = series.length * barSize + (series.length - 1) * 2 + (narrow ? 30 : 40);
   const height = data.length * groupH + 48;
 
   return (
@@ -257,7 +258,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fill: AXIS_TEXT, fontSize: 14 }}
+                tick={{ fill: AXIS_TEXT, fontSize: 15 }}
               />
               <YAxis
                 type="category"
@@ -279,7 +280,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
                   dataKey={s.id}
                   name={s.label}
                   fill={s.color}
-                  maxBarSize={14}
+                  maxBarSize={barSize}
                   radius={[0, 4, 4, 0]}
                   isAnimationActive={!reduce}
                   animationDuration={800}
@@ -304,7 +305,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
                             x={x + Math.max(0, width) + 8}
                             y={y + h / 2}
                             dy="0.35em"
-                            style={{ fill: "var(--text)", fontSize: narrow ? 13 : 15, fontWeight: 600 }}
+                            style={{ fill: "var(--text)", fontSize: 16, fontWeight: 600 }}
                           >
                             {fmtPct(value, 0)}
                           </text>

@@ -50,10 +50,10 @@ export function ResultsView() {
   return (
     <Frame>
       <ResultsHeader evalCompare={ec} />
-      <div className="grid gap-6 sm:gap-8">
+      <div className="grid grid-cols-1 gap-6 sm:gap-8">
         <ComparisonTable evalCompare={ec} />
         <MetricBarChart evalCompare={ec} />
-        <div className="grid gap-6 sm:gap-8 2xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 sm:gap-8 2xl:grid-cols-2">
           <CategoryF1Chart evalCompare={ec} />
           <ConfusionHeatmap evalCompare={ec} />
         </div>
