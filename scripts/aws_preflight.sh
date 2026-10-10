@@ -33,8 +33,8 @@ check "ec2:DescribeImages"               aws ec2 describe-images --region "$REGI
 check "ec2:DescribeVpcs"                 aws ec2 describe-vpcs --region "$REGION" --max-items 1
 check "ec2:CreateKeyPair (dry-run)"      aws ec2 create-key-pair --region "$REGION" --key-name understudy-preflight --dry-run
 check "ec2:CreateSecurityGroup (dry-run)" aws ec2 create-security-group --region "$REGION" --group-name understudy-preflight --description x --dry-run
-check "ssm:GetParameter (GPU AMI lookup)" aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
-AMI="$(aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id --query Parameter.Value --output text 2>/dev/null || true)"
+check "ssm:GetParameter (GPU AMI lookup)" aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/oss-nvidia-driver-gpu-pytorch-2.7-ubuntu-22.04/latest/ami-id
+AMI="$(aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/oss-nvidia-driver-gpu-pytorch-2.7-ubuntu-22.04/latest/ami-id --query Parameter.Value --output text 2>/dev/null || true)"
 if [[ "$AMI" == ami-* ]]; then
   check "ec2:RunInstances $ITYPE (dry-run)" aws ec2 run-instances --region "$REGION" --instance-type "$ITYPE" --image-id "$AMI" --count 1 --dry-run
 else

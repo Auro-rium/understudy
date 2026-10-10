@@ -17,7 +17,7 @@ cleanup() { [[ -n "$IID" ]] && { echo "terminating $IID"; aws ec2 terminate-inst
             [[ -n "${SG:-}" ]] && { sleep 45; aws ec2 delete-security-group --region "$REGION" --group-id "$SG" >/dev/null 2>&1; }; }
 trap cleanup EXIT
 
-AMI="$(aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id --query Parameter.Value --output text)"
+AMI="$(aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/oss-nvidia-driver-gpu-pytorch-2.7-ubuntu-22.04/latest/ami-id --query Parameter.Value --output text)"
 MYIP="$(curl -s https://checkip.amazonaws.com)"
 aws ec2 create-key-pair --region "$REGION" --key-name "$NAME" --query KeyMaterial --output text > "$OUT/key.pem"; chmod 600 "$OUT/key.pem"
 SG="$(aws ec2 create-security-group --region "$REGION" --group-name "$NAME" --description understudy-train --query GroupId --output text)"
@@ -36,6 +36,7 @@ SSH="ssh -i $OUT/key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu
 for i in $(seq 1 30); do $SSH true 2>/dev/null && break; sleep 10; done
 
 scp -i "$OUT/key.pem" -o StrictHostKeyChecking=no data/train.jsonl data/val.jsonl training/aws_qlora_train.py "ubuntu@$HOST:~/"
-$SSH "pip install -q -U transformers peft bitsandbytes accelerate && HF_TOKEN=$HF_TOKEN python aws_qlora_train.py --train train.jsonl --val val.jsonl --out out ${*:-}" 2>&1 | tee "$OUT/train.log"
+# PyTorch DLAMI keeps torch in /opt/pytorch (venv) when present; otherwise fall back to system python3
+$SSH "[ -f /opt/pytorch/bin/activate ] && . /opt/pytorch/bin/activate; nvidia-smi -L; python -c 'import torch;print(torch.__version__, torch.cuda.is_available())' && python -m pip install -q -U transformers peft bitsandbytes accelerate && HF_TOKEN=$HF_TOKEN python aws_qlora_train.py --train train.jsonl --val val.jsonl --out out ${*:-}" 2>&1 | tee "$OUT/train.log"
 scp -r -i "$OUT/key.pem" -o StrictHostKeyChecking=no "ubuntu@$HOST:~/out" "$OUT/"
 echo "results in $OUT/out (adapter/, loss_curve.json, train_meta.json). Next: scripts/spike_peft_to_mlx.py then score on the test set."
