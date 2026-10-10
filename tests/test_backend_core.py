@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.classifiers import (ClassifierError, FakeClassifier, ServerClassifier, make_classifier,
+from backend.classifiers import (ClassifierError, FakeClassifier, make_classifier,
                                  softmax_over_letters)
 from backend.db import DB, DEFAULT_THRESHOLD
 from backend.fakes import FakeTeacher
@@ -198,27 +198,6 @@ def test_rounds_roundtrip(db):
                     eval={"category_acc": 0.9, "category_macro_f1": 0.8, "priority_acc": 0.7})
     r = db.list_rounds()[0]
     assert r["promoted"] is True and r["loss"][0]["step"] == 1 and db.next_round_number() == 2
-
-
-def test_server_classifier_parses_top_logprobs():
-    def lp(t, v):
-        return {"token": t, "logprob": v}
-    body = {"choices": [{"message": {"content": "C P2"},
-                         "logprobs": {"content": [{"token": "C", "logprob": -0.1, "top_logprobs": [
-                             lp("C", -0.1), lp("A", -2.4), lp("the", -5), lp("B", -3.0)]}]}}]}
-    out = ServerClassifier.parse_response(body)
-    assert out.letter == "C" and out.priority == "P2" and 0.8 < out.confidence < 1
-    with pytest.raises(ClassifierError):
-        ServerClassifier.parse_response({"choices": [{"message": {"content": "C P2"}}]})
-
-
-def test_server_classifier_http_mock():
-    def handler(req):
-        assert json.loads(req.content)["logprobs"] is True
-        return httpx.Response(200, json={"choices": [{"message": {"content": "B P1"}, "logprobs": {
-            "content": [{"token": "B", "logprob": -0.2, "top_logprobs": [{"token": "B", "logprob": -0.2}]}]}}]})
-    c = ServerClassifier(base_url="http://x/v1", client=httpx.Client(transport=httpx.MockTransport(handler)))
-    assert c.classify("t").letter == "B"
 
 
 def test_softmax_and_factory(monkeypatch):

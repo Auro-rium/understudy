@@ -1,27 +1,9 @@
-"""Defensive import of common.teacher (owned by another agent)."""
+"""Teacher prompt/answer parsing/prices shared by the router and eval."""
 import json
 import os
 import re
-from dataclasses import dataclass
 
-try:  # real implementation
-    from common.teacher import Teacher, TeacherUnavailable, TeacherResult  # type: ignore
-    TEACHER_AVAILABLE = True
-except Exception:  # module missing or its deps missing
-    TEACHER_AVAILABLE = False
-
-    class TeacherUnavailable(Exception):
-        pass
-
-    @dataclass
-    class TeacherResult:
-        text: str
-        tokens_in: int
-        tokens_out: int
-        latency_s: float
-
-    Teacher = None  # type: ignore
-
+from common.teacher import TeacherResult, TeacherUnavailable  # noqa: F401  (re-exported)
 from backend.schemas import CATEGORIES, LETTERS, PRIORITIES
 
 TEACHER_SYSTEM = (

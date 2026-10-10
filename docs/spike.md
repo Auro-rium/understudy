@@ -1,5 +1,7 @@
 # Phase 0 spike findings
 
+> Note: the `scripts/spike_*.py` helpers cited below were removed in the backend cleanup; they remain in git history (before commit `One RoundBackend`). The findings stand.
+
 | # | Question | Result | Evidence | Decision |
 |---|----------|--------|----------|----------|
 | 1a | Does mlx_lm.server 0.32.0 return token logprobs? | YES | `POST /v1/chat/completions` with `"logprobs":true,"top_logprobs":5` returns `choices[0].logprobs.content[i]` = `{id, token, logprob, top_logprobs[{id,token,logprob}]}` for every generated token. First token `C` logprob -0.5, top-5 included A/D/B/F. Logprobs look quantised (-0.5, -2.25, -2.375: bf16). | Server usable for confidence: p = exp(logprob of first token) if first token is a letter. Top-5 only covers 5 of 8 letters, so renormalisation over A-H is approximate. |

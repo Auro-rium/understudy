@@ -232,56 +232,10 @@ class MlxInProcessClassifier(BaseClassifier):
         return text, n_in, len(self.tokenizer.encode(text, add_special_tokens=False))
 
 
-# ---------------------------------------------------------------- server (:8080)
-class ServerClassifier(BaseClassifier):
-    name = "server"
-
-    def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None,
-                 client=None, timeout: float = 30.0):
-        import httpx
-        self.base_url = (base_url or os.environ.get("LOCAL_SERVER_URL", "http://127.0.0.1:8080/v1")).rstrip("/")
-        self.model = model or os.environ.get("LOCAL_MODEL", "mlx-community/gemma-4-e4b-it-4bit")
-        self.client = client or httpx.Client(timeout=timeout)
-
-    def classify(self, text: str) -> ClassifierOutput:
-        body = {"model": self.model, "temperature": 0, "max_tokens": 20, "logprobs": True,
-                "top_logprobs": 20, "chat_template_kwargs": {"enable_thinking": False},
-                "messages": [{"role": "system", "content": CLASSIFIER_SYSTEM},
-                             {"role": "user", "content": text}]}
-        t0 = time.perf_counter()
-        r = self.client.post(f"{self.base_url}/chat/completions", json=body)
-        r.raise_for_status()
-        out = self.parse_response(r.json())
-        out.timings = {"model_forward": (time.perf_counter() - t0) * 1000}
-        return out
-
-    @staticmethod
-    def parse_response(d: dict) -> ClassifierOutput:
-        ch = d["choices"][0]
-        lp = (ch.get("logprobs") or {}).get("content")
-        if not lp:
-            raise ClassifierError("server returned no logprobs")
-        first = next((t for t in lp if t.get("token", "").strip()), lp[0])
-        scores = {}
-        for cand in list(first.get("top_logprobs", [])) + [first]:
-            tok = cand["token"].strip().upper()
-            if tok in LETTERS:
-                scores[tok] = max(scores.get(tok, -1e9), cand["logprob"])
-        probs = softmax_over_letters(scores)
-        letter = max(probs, key=probs.get)
-        _, prio = parse_answer(ch["message"]["content"])
-        return ClassifierOutput(letter, prio or "P3", probs[letter])
-
-    def with_adapter(self, adapter_path: str) -> "ServerClassifier":
-        raise ClassifierError("ServerClassifier cannot hot-swap adapters; restart the server with the adapter")
-
-
 def make_classifier(kind: Optional[str] = None) -> BaseClassifier:
     kind = (kind or os.environ.get("CLASSIFIER", "fake")).lower()
     if kind == "mlx":
         return MlxInProcessClassifier()
-    if kind == "server":
-        return ServerClassifier()
     if kind == "fake":
         return FakeClassifier()
-    raise ValueError(f"unknown CLASSIFIER={kind!r} (mlx|server|fake)")
+    raise ValueError(f"unknown CLASSIFIER={kind!r} (mlx|fake)")

@@ -200,7 +200,7 @@ class Router:
                 pass
         return result
 
-    # ---- health probe (see also route_text at module bottom)
+    # ---- health probe
     def probe_teacher(self) -> bool:
         """Update detected-offline state from teacher.healthy(). Returns healthy flag."""
         if self.teacher is None:
@@ -211,32 +211,3 @@ class Router:
             ok = False
         self.mode.set_detected(not ok)
         return ok
-
-
-_EVAL_ROUTER: Optional[Router] = None
-_EVAL_LOCK = threading.Lock()
-
-
-def route_text(text: str) -> dict:
-    """Stateless entry point for eval/run.py: routes one ticket through a private in-memory Router
-    (does NOT write to the production DB). Uses CLASSIFIER env, the default teacher, and the
-    thresholds stored in DB_PATH if present (else the 0.8 default)."""
-    global _EVAL_ROUTER
-    with _EVAL_LOCK:
-        if _EVAL_ROUTER is None:
-            from backend.app import default_teacher
-            from backend.classifiers import make_classifier
-            mem = DB(":memory:")
-            path = os.environ.get("DB_PATH", "understudy.sqlite")
-            if os.path.exists(path):
-                try:
-                    src = DB(path)
-                    for r in src.query("SELECT * FROM thresholds"):
-                        mem.set_threshold(r["model_version"], r["threshold"], r["coverage"], r["accuracy"])
-                    src.close()
-                except Exception:
-                    pass
-            _EVAL_ROUTER = Router(mem, ModelHolder(make_classifier(), "base"), default_teacher())
-    r = _EVAL_ROUTER.classify(text)
-    return {"category": r["category"], "priority": r["priority"], "source": r["source"],
-            "cost_usd": r["cost_usd"], "latency_ms": r["latency_ms"], "confidence": r["confidence"]}

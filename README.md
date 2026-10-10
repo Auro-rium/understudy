@@ -12,13 +12,13 @@ Output per ticket: `{"category": A..H, "priority": P1..P4}`; the team is a fixed
 ## Layout
 | Path | What |
 |---|---|
-| `backend/` | FastAPI app, SQLite, classifier (`mlx`/`server`/`fake`), router, hot-swap holder, SSE |
+| `backend/` | FastAPI app, SQLite, classifier (`mlx`/`fake`), router, hot-swap holder, SSE, telemetry (`/logs`), OpenAI-compatible `/v1` |
 | `data/` | ticket generation, teacher labeling, splits, audit; `train/val/test/demo.jsonl` |
-| `training/` | `mlx_local` LoRA trainer, `round.py` (train, score, promote), `aws`/`modal` stubs |
+| `training/` | `mlx_local` LoRA trainer, `round.py` (train, score, promote) |
 | `eval/` | metrics and the scoring runner, results in `eval/results/` |
 | `common/teacher.py` | Backboard.io client (cache, rate limit, retries, real token counts) |
-| `scripts/` | quota watcher, snapshot dump, Backboard helpers, spike scripts |
-| `docs/spike.md` | measured findings (logprobs, thinking-off, LoRA memory, PEFT to MLX) |
+| `scripts/` | `live_test.py` (end-to-end check), `snapshot.py`, `demo_reset.sh`, `start_webui.sh` |
+| `docs/spike.md` | measured findings (logprobs, thinking-off, LoRA memory, PEFT to MLX); the spike scripts it cites live in git history |
 
 ## Setup
 ```bash
@@ -28,7 +28,7 @@ cp .env.example .env     # then fill BACKBOARD_API_KEY (never commit .env)
 ```
 Models in `.env` (Backboard `provider/model` ids; prices from the OpenAI and Google pricing pages):
 teacher `openai/gpt-6-luna` ($0.10 in / $0.50 out per 1M tokens), generator `google/gemini-2.5-flash`
-($0.30 / $2.50, thinking billed as output). `scripts/backboard_models.py PROVIDER [name]` lists live prices.
+($0.30 / $2.50, thinking billed as output).
 
 ## Data (about $2, about 15 minutes)
 ```bash
@@ -47,8 +47,8 @@ CLASSIFIER=fake TEACHER=fake backend/.venv/bin/uvicorn backend.app:app --port 80
 ```
 OpenAPI at `http://127.0.0.1:8000/docs`; SSE at `/api/events`; `POST /api/stream/start {"rate_per_min": 30}`
 replays `data/demo.jsonl`; `POST /api/mode/offline {"offline": true}` forces offline mode.
-Memory: the :8080 `mlx_lm.server` and the in-process model each take about 5 GB, so stop `start.sh`'s server
-before training.
+`./start.sh` runs the backend plus Open WebUI (which talks to the backend's `/v1`; no separate model server).
+Training unloads the serving model while it runs, so one model is in RAM at a time.
 
 ## Train and score a round (local)
 ```bash
@@ -58,13 +58,6 @@ MLX_PYTHON=$PWD/../../../.venv/bin/python CLASSIFIER=mlx \
 `--seed-from-train-pool` seeds the pool from `data/train.jsonl` teacher labels, recorded as
 `source='seed_train_pool'`. Promotion requires a strict macro-F1 gain; the reason is stored either way.
 Or `POST /api/train/round {"backend": "mlx_local"}` (progress over SSE).
-
-## AWS training
-`training/aws.py` is a stub (raises `NotEnabled` unless `AWS_TRAIN_ENABLED=1`). SageMaker
-`ml.g5.xlarge`/`ml.g5.2xlarge` training quota is approved in us-east-1; a real run still needs an S3 bucket, a
-SageMaker role, Hugging Face access to `google/gemma-4-E4B-it`, and the PEFT script. Converting a PEFT adapter
-to MLX (`scripts/spike_peft_to_mlx.py`) is verified only on a synthetic adapter. `scripts/watch_quota.sh`
-watches quota approval.
 
 ## Tests
 ```bash
