@@ -56,6 +56,14 @@ class BaseClassifier:
         """Return a NEW classifier with the adapter applied (called outside the swap lock)."""
         raise NotImplementedError
 
+    def without_adapter(self) -> "BaseClassifier":
+        """Return a NEW classifier on the plain base weights (version 'base')."""
+        raise NotImplementedError
+
+    def chat(self, messages: list, max_tokens: int = 512, temperature: float = 0.0) -> tuple:
+        """Free-form chat for the OpenAI-compatible endpoint -> (text, prompt_tokens, completion_tokens)."""
+        raise ClassifierError(f"{self.name} classifier does not support chat")
+
 
 # ---------------------------------------------------------------- fake
 _KEYWORDS = [
@@ -98,6 +106,13 @@ class FakeClassifier(BaseClassifier):
         n = FakeClassifier(self.boost + 0.15, self.fixed, self.delay_s)
         n.adapters = self.adapters + [adapter_path]
         return n
+
+    def without_adapter(self) -> "FakeClassifier":
+        return FakeClassifier(0.0, self.fixed, self.delay_s)
+
+    def chat(self, messages, max_tokens=512, temperature=0.0):
+        last = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        return f"[fake model, {len(self.adapters)} adapters] You said: {last}", len(last.split()), 8
 
 
 # ---------------------------------------------------------------- mlx in-process
@@ -191,6 +206,25 @@ class MlxInProcessClassifier(BaseClassifier):
 
     def with_adapter(self, adapter_path: str) -> "MlxInProcessClassifier":
         return MlxInProcessClassifier(self.model_path, adapter_path)
+
+    def without_adapter(self) -> "MlxInProcessClassifier":
+        return MlxInProcessClassifier(self.model_path, None)
+
+    def chat(self, messages, max_tokens=512, temperature=0.0):
+        return _on_mlx_thread(self._chat, messages, max_tokens, temperature)
+
+    def _chat(self, messages, max_tokens, temperature):
+        from mlx_lm import generate
+        from mlx_lm.sample_utils import make_sampler
+        try:
+            prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False,
+                                                        enable_thinking=False)
+        except TypeError:
+            prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        n_in = len(self.tokenizer.encode(prompt, add_special_tokens=False))
+        text = generate(self.model, self.tokenizer, prompt=prompt, max_tokens=max_tokens,
+                        sampler=make_sampler(temp=temperature))
+        return text, n_in, len(self.tokenizer.encode(text, add_special_tokens=False))
 
 
 # ---------------------------------------------------------------- server (:8080)

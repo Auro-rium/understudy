@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -21,7 +21,9 @@ from backend.router import ModeState, Router
 from backend.schemas import (CATEGORIES, TEAMS, ClassifyRequest, ClassifyResult, Health, MetricsSummary,
                              OfflineRequest, ReviewItem, RoundOut, StreamStart, TicketOut, TimePoint,
                              TrainRequest)
-from backend import teacher_iface
+from backend import demo_api, teacher_iface
+from backend.demo_api import require_key
+from common.teacher import load_env
 
 
 class AppContext:
@@ -60,6 +62,7 @@ def default_teacher():
 
 def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = None, teacher="auto",
                probe_interval_s: Optional[float] = None, load_promoted: bool = True) -> FastAPI:
+    load_env()  # DEMO_KEY, DB_PATH, CLASSIFIER, ... from .env (real environment variables win)
     db = db or DB()
     classifier = classifier or make_classifier()
     teacher = default_teacher() if teacher == "auto" else teacher
@@ -111,7 +114,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
     def _health():
         return health()
 
-    @app.post("/api/classify", response_model=ClassifyResult)
+    @app.post("/api/classify", response_model=ClassifyResult, dependencies=[Depends(require_key)])
     def classify(req: ClassifyRequest):
         if not req.text.strip():
             raise HTTPException(422, "text must not be empty")
@@ -150,7 +153,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
                 "eval_compare": metrics.eval_compare()}
 
     # ------------------------------------------------------------ training
-    @app.post("/api/train/round")
+    @app.post("/api/train/round", dependencies=[Depends(require_key)])
     async def train_round(req: TrainRequest):
         try:
             from training.round import run_round_async  # type: ignore
@@ -197,7 +200,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
                 await asyncio.sleep(gap)
         ctx.stream_task = None
 
-    @app.post("/api/stream/start")
+    @app.post("/api/stream/start", dependencies=[Depends(require_key)])
     async def stream_start(req: StreamStart):
         if req.rate_per_min <= 0:
             raise HTTPException(422, "rate_per_min must be > 0")
@@ -210,7 +213,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
         ctx.stream_task = asyncio.create_task(stream_loop(path, req.rate_per_min))
         return {"running": True, "rate_per_min": req.rate_per_min}
 
-    @app.post("/api/stream/stop")
+    @app.post("/api/stream/stop", dependencies=[Depends(require_key)])
     async def stream_stop():
         was = bool(ctx.stream_task and not ctx.stream_task.done())
         if was:
@@ -219,7 +222,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
         return {"running": False, "was_running": was}
 
     # ------------------------------------------------------------ mode + events
-    @app.post("/api/mode/offline")
+    @app.post("/api/mode/offline", dependencies=[Depends(require_key)])
     def mode_offline(req: OfflineRequest):
         ctx.mode.set_forced(req.offline)
         return {"offline": req.offline, "mode": ctx.mode.mode}
@@ -238,6 +241,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
 
         return EventSourceResponse(gen(), ping=15)
 
+    demo_api.install(app, ctx, events)
     return app
 
 

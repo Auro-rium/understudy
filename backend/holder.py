@@ -75,6 +75,14 @@ class ModelHolder:
         finally:
             self._lock.release_read()
 
+    def use(self, fn):
+        """Run fn(classifier) under the read lock (so a swap waits for it) -> (result, version)."""
+        self._lock.acquire_read()
+        try:
+            return fn(self._clf), self._version
+        finally:
+            self._lock.release_read()
+
     def swap(self, version: str, adapter_path: Optional[str] = None,
              classifier: Optional[BaseClassifier] = None) -> str:
         """Swap to `version`. Either give a ready `classifier`, or an `adapter_path` that is applied

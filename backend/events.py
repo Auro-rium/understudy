@@ -4,7 +4,7 @@ import json
 import threading
 from typing import Optional
 
-EVENT_TYPES = ("prediction", "train_progress", "round_complete", "mode")
+EVENT_TYPES = ("prediction", "train_progress", "round_complete", "mode", "model")
 
 
 class Broadcaster:
