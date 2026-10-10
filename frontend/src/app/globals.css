@@ -97,8 +97,11 @@ body {
   border-radius: 4px;
 }
 
-a {
-  color: inherit;
+/* In the base layer so utilities like text-bg / text-ink-3 on links still win. */
+@layer base {
+  a {
+    color: inherit;
+  }
 }
 
 /* Recharts: quiet grid + axes */
