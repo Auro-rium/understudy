@@ -20,7 +20,9 @@ If the numbers on screen differ from these after a snapshot sync or a new round,
 
 ## Pre-flight (10 minutes before)
 
-- [ ] Refresh the bundled data: `npm run sync:snapshot` (or `bash scripts/sync-snapshot.sh http://127.0.0.1:8000` with the backend up), then `npm run build && npm start -- -p 3001`. Rebuild after any env change.
+- [ ] Refresh the bundled data: `npm run sync:snapshot` (or `bash scripts/sync-snapshot.sh http://127.0.0.1:8000` with the backend up), then `npm run build && npm start -- -p 3001`. Rebuild only after a data refresh or code change; the backend URL and demo key are runtime (`?api=`, `?key=`) and never need a rebuild.
+- [ ] Live mode: open `http://localhost:3001/live?key=<demo key>` once so the key is saved (it disappears from the address bar). Header shows `API: 127.0.0.1:8000`. Confirm the model switch under "Model serving" lists base, round_1, round_2, round_3 with their F1.
+- [ ] Offline proof: the app has no third-party requests (system fonts, no CDN or analytics), so `npm start` works with Wi-Fi off.
 - [ ] Open http://localhost:3001. Decide the mode: **SNAPSHOT badge visible** means snapshot mode; **no badge** means live.
 - [ ] Landing page shows the ladder (base, round 1 to 3) with a **Provisional** badge, and "2 of 3 rounds promoted". If it shows an empty state, the snapshot file is missing; fix before going on.
 - [ ] Live mode only: `curl http://127.0.0.1:8000/api/health` returns a model version and `online`; no banner under the header ("updating every 2 seconds" or "saved snapshot" means something is wrong, see Recovery). Stream is **stopped**.
@@ -51,6 +53,7 @@ Same opening as Script A (0:00 to 1:10), then:
 | 1:10 | `/live` | Press **start stream**. | "Tickets are arriving now. Each gets a category, priority and team. Colour tells you who answered: blue is the local model, orange is the teacher." |
 | 1:40 | `/live` | Point at one orange ticket and the counters. | "Here the model was not sure, so it asked the teacher. That answer becomes a training example." |
 | 2:00 | `/training` | **Run training round** (only if the backend run is short enough; a full round can take many minutes, round 3 took about 33). Otherwise show the finished rounds. | "A round collects examples, trains, evaluates, and only then promotes." |
+| 2:10 | `/live` | **Model switch** (optional, 10 s): under "Model serving" click `base`, wait for the loading line, then click `round_3`. | "Same laptop, same tickets: base scores 0.761, round 3 scores 0.919. Switching loads the other weights in a few seconds." Disabled while a training round runs. |
 | 2:20 | `/live` | Turn **Wi-Fi off**, toggle **force offline**. | See below. |
 | 2:45 | `/results` | Comparison; mention Provisional. | "Provisional, as I said: teacher-derived labels." |
 
@@ -70,7 +73,8 @@ This only works on the local build (`localhost:3001` against `127.0.0.1:8000`), 
 
 1. Start the backend on :8000 and check `curl http://127.0.0.1:8000/api/health`.
 2. The page retries every 5 seconds by itself; within a few seconds the SNAPSHOT badge disappears. No reload is needed.
-3. For the public Vercel link: start `cloudflared tunnel --url http://127.0.0.1:8000`, set `NEXT_PUBLIC_API_URL` to the printed URL and `NEXT_PUBLIC_DATA_SOURCE=api` in Vercel, make sure backend CORS allows the Vercel origin, and redeploy (see README). Until that is done the Vercel page is snapshot-only.
+3. For the public Vercel link: start `cloudflared tunnel --url http://127.0.0.1:8000` and open `https://understudy-lake.vercel.app/live?api=<printed https URL>&key=<demo key>`. **No rebuild, no redeploy.** The page saves the URL and key in the browser and removes them from the address bar; the header then shows `API: <tunnel host>`. If the tunnel restarts, open the page again with the new `?api=`. Make sure backend CORS allows the Vercel origin and the `X-Demo-Key` header. Until a URL is given the Vercel page is snapshot-only. (Needs the Vercel build to use the default `NEXT_PUBLIC_DATA_SOURCE=api`.)
+   - The same works locally: `http://localhost:3001/live?key=<demo key>` (default API `http://127.0.0.1:8000`). Do not screenshot a URL that still contains `?key=`; after the first load it is gone from the bar.
 4. Say plainly which mode you are in. If the SNAPSHOT badge is on screen, you are showing saved results.
 
 ## Recovery
@@ -80,6 +84,9 @@ This only works on the local build (`localhost:3001` against `127.0.0.1:8000`), 
 | Page will not load | Check `npm start -- -p 3001` is still running. Restart it. |
 | "Can't reach the backend" | Neither backend nor snapshot is available. Check `public/export/snapshot.json` exists; rebuild; start the backend. |
 | SNAPSHOT badge when you wanted live | The backend is unreachable. Start it; the page reconnects within about 5 seconds. Meanwhile present snapshot mode honestly. |
+| "Demo key missing or wrong - open the page with ?key=..." | Open `/live?key=<demo key>` again (the old key was wrong or never saved). Controls stay usable. |
+| Model switch fails or is greyed out | Greyed: a training round is running, or the backend is not reachable. Error text under it is the backend's reason (409 round running, 500 load failure). `/api/health.model_version` is the truth. |
+| Header says `API: 127.0.0.1:8000` but you want the tunnel | Open the page with `?api=<tunnel URL>`. `?api=` with no value forgets the saved URL. |
 | Start, train or force-offline buttons do nothing | They are disabled on a snapshot. Wait for the backend or stay on the snapshot script. |
 | "updating every 2 seconds" banner | SSE is down; polling covers it. Carry on. |
 | Stream started but nothing moves | Press stop then start on `/live`. Check the backend log. |

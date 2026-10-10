@@ -8,11 +8,15 @@
 
 import { categoryLetter, categoryName, teamFor } from "@/lib/categories";
 import type {
+  ActivateModelResponse,
   EvalCompare,
   EvalModel,
   Health,
   LossPoint,
   Mode,
+  ModelSwitched,
+  ModelVersionInfo,
+  ModelVersions,
   ReviewItem,
   Round,
   RoundComplete,
@@ -224,6 +228,42 @@ export function normalizeRoundComplete(raw: unknown): RoundComplete | null {
     job_id: str(raw.job_id),
     round,
     previous_model_version: str(raw.previous_model_version),
+  };
+}
+
+/** SSE "model" payload; null unless it names the new version. */
+export function normalizeModelSwitched(raw: unknown): ModelSwitched | null {
+  if (!isRec(raw)) return null;
+  const model_version = str(raw.model_version);
+  if (!model_version) return null;
+  return { model_version, previous_model_version: str(raw.previous_model_version) };
+}
+
+export function normalizeModelVersions(raw: unknown): ModelVersions {
+  const r = isRec(raw) ? raw : {};
+  const versions: ModelVersionInfo[] = [];
+  for (const v of arr(r.versions)) {
+    if (!isRec(v) || typeof v.version !== "string" || v.version === "") continue;
+    versions.push({
+      version: v.version,
+      available: v.available === true,
+      promoted: v.promoted === true,
+      category_macro_f1:
+        typeof v.category_macro_f1 === "number" && Number.isFinite(v.category_macro_f1) ? v.category_macro_f1 : null,
+    });
+  }
+  return { active: str(r.active), versions };
+}
+
+export function normalizeActivateModel(raw: unknown): ActivateModelResponse | null {
+  if (!isRec(raw)) return null;
+  const model_version = str(raw.model_version);
+  if (!model_version) return null;
+  return {
+    model_version,
+    previous_model_version: str(raw.previous_model_version),
+    changed: raw.changed === true,
+    load_s: num(raw.load_s),
   };
 }
 

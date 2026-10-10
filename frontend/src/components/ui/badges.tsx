@@ -1,7 +1,9 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import type { Mode } from "@/lib/types";
 import { fmtDateTime } from "@/lib/format";
+import { getApiHost, getApiUrl, serverApiHost, subscribeRuntime } from "@/lib/runtime";
 import { useStore } from "@/lib/store";
 import { cx } from "./cx";
 
@@ -18,6 +20,21 @@ export function DataBadge({ className }: { className?: string }) {
       title="Saved export from the backend, not live data"
     >
       SNAPSHOT{state.snapshotAt ? ` · ${fmtDateTime(state.snapshotAt)}` : ""}
+    </span>
+  );
+}
+
+/** Which backend this page talks to (resolved at runtime from ?api= / saved / env). Empty until the browser has resolved it. */
+export function ApiHostTag({ className }: { className?: string }) {
+  const { state } = useStore();
+  const host = useSyncExternalStore(subscribeRuntime, getApiHost, serverApiHost);
+  if (!state.apiConfigured || !host) return null;
+  return (
+    <span
+      className={cx("max-w-[16rem] truncate font-mono text-base text-ink-3", className)}
+      title={`Backend: ${getApiUrl()} (change with ?api=...)`}
+    >
+      API: {host}
     </span>
   );
 }

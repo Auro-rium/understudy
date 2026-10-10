@@ -141,11 +141,40 @@ export interface RoundComplete {
   previous_model_version: string;
 }
 
+/** SSE "model": the serving model was switched (POST /api/model/activate). */
+export interface ModelSwitched {
+  model_version: string;
+  previous_model_version: string;
+}
+
 export type ServerEvent =
   | { type: "prediction"; data: Ticket }
   | { type: "train_progress"; data: TrainProgress }
   | { type: "round_complete"; data: RoundComplete }
-  | { type: "mode"; data: { mode: Mode } };
+  | { type: "mode"; data: { mode: Mode } }
+  | { type: "model"; data: ModelSwitched };
+
+/* ---------- model versions (GET /api/model/versions, POST /api/model/activate) ---------- */
+
+export interface ModelVersionInfo {
+  version: string;
+  available: boolean;
+  promoted: boolean;
+  /** null when the backend sent no score */
+  category_macro_f1: number | null;
+}
+
+export interface ModelVersions {
+  active: string;
+  versions: ModelVersionInfo[];
+}
+
+export interface ActivateModelResponse {
+  model_version: string;
+  previous_model_version: string;
+  changed: boolean;
+  load_s: number;
+}
 
 /* ---------- requests ---------- */
 

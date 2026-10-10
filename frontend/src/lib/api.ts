@@ -1,13 +1,18 @@
 /**
  * API client for the FastAPI backend. Config:
- *   NEXT_PUBLIC_API_URL      default http://127.0.0.1:8000
+ *   Backend URL / demo key   resolved at runtime in the browser (?api=, ?key=, saved, then
+ *                            NEXT_PUBLIC_API_URL, then http://127.0.0.1:8000): see lib/runtime.ts.
  *   NEXT_PUBLIC_DATA_SOURCE  "api" (default) | "snapshot"  -- "snapshot" never calls the API.
+ * Every POST carries X-Demo-Key; a 401/403 becomes an ApiError with DEMO_KEY_MESSAGE.
  * Every response is passed through the normaliser in lib/snapshot.ts.
  */
 
+import { getApiUrl, getDemoKey } from "@/lib/runtime";
 import {
+  normalizeActivateModel,
   normalizeEvalCompare,
   normalizeHealth,
+  normalizeModelVersions,
   normalizeReviewItem,
   normalizeRound,
   normalizeSnapshot,
@@ -16,9 +21,11 @@ import {
   normalizeTimePoint,
 } from "@/lib/snapshot";
 import type {
+  ActivateModelResponse,
   ClassifyResult,
   EvalCompare,
   Health,
+  ModelVersions,
   ReviewItem,
   Round,
   Snapshot,
@@ -31,12 +38,18 @@ import type {
 
 export type DataSourceMode = "api" | "snapshot";
 
-export const API_URL: string = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 export const DATA_SOURCE: DataSourceMode = process.env.NEXT_PUBLIC_DATA_SOURCE === "snapshot" ? "snapshot" : "api";
-/** false in "snapshot" mode: the app must make zero API calls. */
+/**
+ * false in a build made with NEXT_PUBLIC_DATA_SOURCE=snapshot: the app must make zero API calls.
+ * (This is the only build-time switch left; the backend URL and demo key are runtime, see lib/runtime.ts.)
+ */
 export const API_CONFIGURED: boolean = DATA_SOURCE === "api";
 
 const TIMEOUT_MS = 4000;
+/** Model activation loads weights (about 3-10 s), so it gets a longer timeout. */
+const ACTIVATE_TIMEOUT_MS = 30000;
+
+export const DEMO_KEY_MESSAGE = "Demo key missing or wrong - open the page with ?key=...";
 
 export class ApiError extends Error {
   readonly status: number | null;
@@ -50,20 +63,44 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: { method: "POST"; body?: unknown }): Promise<T> {
+/** FastAPI errors are `{detail: string}`; anything else yields null. */
+async function errorDetail(res: Response): Promise<string | null> {
+  try {
+    const body = JSON.parse(await res.text()) as { detail?: unknown } | null;
+    return typeof body?.detail === "string" && body.detail ? body.detail : null;
+  } catch {
+    return null;
+  }
+}
+
+async function request<T>(
+  path: string,
+  init?: { method: "POST"; body?: unknown; timeoutMs?: number },
+): Promise<T> {
   if (!API_CONFIGURED) throw new ApiError(`API disabled (NEXT_PUBLIC_DATA_SOURCE=snapshot): ${path}`, null, path);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), init?.timeoutMs ?? TIMEOUT_MS);
   try {
+    const isPost = init?.method === "POST";
     const hasBody = init?.body !== undefined;
-    const res = await fetch(`${API_URL}${path}`, {
+    const headers: Record<string, string> = {};
+    if (hasBody) headers["Content-Type"] = "application/json";
+    if (isPost) {
+      const key = getDemoKey();
+      if (key) headers["X-Demo-Key"] = key;
+    }
+    const res = await fetch(`${getApiUrl()}${path}`, {
       method: init?.method ?? "GET",
       signal: ctrl.signal,
-      headers: hasBody ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: hasBody ? JSON.stringify(init?.body) : undefined,
     });
     if (!res.ok) {
-      throw new ApiError(`${res.status} ${res.statusText} for ${path}`, res.status, path);
+      if (isPost && (res.status === 401 || res.status === 403)) {
+        throw new ApiError(DEMO_KEY_MESSAGE, res.status, path);
+      }
+      const detail = await errorDetail(res);
+      throw new ApiError(detail ?? `${res.status} ${res.statusText} for ${path}`, res.status, path);
     }
     const text = await res.text();
     return (text ? JSON.parse(text) : undefined) as T;
@@ -101,6 +138,8 @@ export interface Api {
   streamStart(ratePerMin: number): Promise<void>;
   streamStop(): Promise<void>;
   setOffline(offline: boolean): Promise<void>;
+  modelVersions(): Promise<ModelVersions>;
+  activateModel(version: string): Promise<ActivateModelResponse>;
 }
 
 export const api: Api = {
@@ -131,5 +170,13 @@ export const api: Api = {
   },
   setOffline: async (offline) => {
     await request<unknown>("/api/mode/offline", { method: "POST", body: { offline } });
+  },
+  modelVersions: async () => normalizeModelVersions(await request<unknown>("/api/model/versions")),
+  activateModel: async (version) => {
+    const res = normalizeActivateModel(
+      await request<unknown>("/api/model/activate", { method: "POST", body: { version }, timeoutMs: ACTIVATE_TIMEOUT_MS }),
+    );
+    if (!res) throw new ApiError("Malformed /api/model/activate response", null, "/api/model/activate");
+    return res;
   },
 };

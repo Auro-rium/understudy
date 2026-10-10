@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useStore } from "@/lib/store";
 import { fmtInt, fmtPct, fmtUsd } from "@/lib/format";
 import { AnimatedNumber, EmptyState, ModeBadge, Skeleton, StatTile, cx } from "@/components/ui";
+import { ModelSwitch } from "./ModelSwitch";
 
 /** Version tile: the big version string flips like a departure board when it changes. */
 function VersionTile({ version, mode, pulse }: { version: string; mode: "online" | "offline"; pulse: boolean }) {
@@ -33,6 +34,7 @@ function VersionTile({ version, mode, pulse }: { version: string; mode: "online"
         <ModeBadge mode={mode} className="text-lg!" />
         <span className="text-lg text-ink-3">{mode === "online" ? "teacher reachable" : "no cloud teacher"}</span>
       </div>
+      <ModelSwitch className="mt-3" />
     </div>
   );
 }

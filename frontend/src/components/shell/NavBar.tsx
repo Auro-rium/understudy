@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { DataBadge, ModeBadge, VersionChip, cx } from "@/components/ui";
+import { ApiHostTag, DataBadge, ModeBadge, VersionChip, cx } from "@/components/ui";
 
 const ITEMS = [
   { href: "/", label: "Home" },
@@ -50,6 +50,7 @@ export function NavBar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <ApiHostTag className="hidden sm:inline" />
           <DataBadge />
           {state.loaded || state.modelVersion ? <VersionChip version={state.modelVersion || "–"} /> : null}
           <ModeBadge mode={state.mode} />

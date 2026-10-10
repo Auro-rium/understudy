@@ -21,12 +21,15 @@ import {
 } from "react";
 import { API_CONFIGURED, ApiError, api } from "@/lib/api";
 import { subscribe, type EventStatus } from "@/lib/events";
+import { cleanAddressBar } from "@/lib/runtime";
 import { loadBestSnapshot, loadBundledSnapshot, saveSnapshot } from "@/lib/snapshot";
 import type {
   EvalCompare,
   Health,
   LossPoint,
   Mode,
+  ModelSwitched,
+  ModelVersionInfo,
   ReviewItem,
   Round,
   RoundComplete,
@@ -94,9 +97,15 @@ export interface StoreState {
   /** rounds completed while watching, anchored on the timeseries; [] when the timeseries is empty */
   roundMarkers: RoundMarker[];
   lastPredictionAt: number | null;
+  /** GET /api/model/versions; [] until loaded or when the backend has no such endpoint */
+  modelVersions: ModelVersionInfo[];
+  /** version being activated right now (POST /api/model/activate in flight), else null */
+  switchingModel: string | null;
 }
 
 export interface StoreActions {
+  /** switch the serving model; rejects with the backend's {detail} (401 -> demo key message, 409 -> round running) */
+  activateModel(version: string): Promise<void>;
   /** all four reject with Error("Backend not reachable — this is a saved snapshot") when !canControl */
   startStream(ratePerMin?: number): Promise<void>;
   stopStream(): Promise<void>;
@@ -146,6 +155,9 @@ type Action =
   | { type: "round_complete"; data: RoundComplete; at: number; before: number; after: number }
   | { type: "lastRoundAfter"; after: number }
   | { type: "mode"; mode: Mode }
+  | { type: "model"; data: ModelSwitched }
+  | { type: "modelVersions"; versions: ModelVersionInfo[] }
+  | { type: "switching"; version: string | null }
   | { type: "refresh"; summary: Summary; timeseries: TimePoint[]; reviewQueue: ReviewItem[]; health: Health }
   | { type: "extras"; rounds: Round[]; evalCompare: EvalCompare }
   | { type: "streaming"; on: boolean };
@@ -175,6 +187,8 @@ function initialState(): StoreState {
     lastRound: null,
     roundMarkers: [],
     lastPredictionAt: null,
+    modelVersions: [],
+    switchingModel: null,
   };
 }
 
@@ -318,6 +332,19 @@ function step(state: StoreState, a: Action): StoreState {
         health: state.health ? { ...state.health, mode: a.mode } : state.health,
         summary: state.summary ? { ...state.summary, mode: a.mode } : state.summary,
       };
+    case "model": {
+      const version = a.data.model_version;
+      return {
+        ...state,
+        modelVersion: version,
+        health: state.health ? { ...state.health, model_version: version } : state.health,
+        summary: state.summary ? { ...state.summary, model_version: version } : state.summary,
+      };
+    }
+    case "modelVersions":
+      return { ...state, modelVersions: a.versions };
+    case "switching":
+      return { ...state, switchingModel: a.version };
     case "refresh":
       return {
         ...state,
@@ -420,6 +447,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /** Best effort: an older backend without /api/model/versions just leaves the list empty. */
+  const loadVersions = useCallback(async (): Promise<void> => {
+    try {
+      const v = await api.modelVersions();
+      dispatch({ type: "modelVersions", versions: v.versions });
+    } catch {
+      /* keep the previous list */
+    }
+  }, []);
+
   /** Full (re)load: live API first; if unreachable, a saved snapshot (unless one is already showing). */
   const loadAll = useCallback(async (): Promise<void> => {
     if (!API_CONFIGURED) {
@@ -447,17 +484,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dataSource: "live",
         snapshotAt: null,
       });
+      void loadVersions();
     } catch {
       const s = stateRef.current;
       if (s.loaded && (s.dataSource !== "live" || s.connection === "down")) return; // already showing something
       await showSnapshot();
     }
-  }, [showSnapshot]);
+  }, [showSnapshot, loadVersions]);
 
   const loadExtras = useCallback(async (): Promise<void> => {
     const [rounds, evalCompare] = await Promise.all([api.rounds(), api.evalCompare()]);
     dispatch({ type: "extras", rounds, evalCompare });
-  }, []);
+    void loadVersions();
+  }, [loadVersions]);
 
   const refreshLight = useCallback(async (): Promise<void> => {
     const [summary, timeseries, reviewQueue, health] = await Promise.all([
@@ -513,10 +552,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "mode":
           dispatch({ type: "mode", mode: e.data.mode });
           break;
+        case "model":
+          dispatch({ type: "model", data: e.data });
+          void loadVersions();
+          break;
       }
     },
-    [flushPredictions, handleRoundComplete],
+    [flushPredictions, handleRoundComplete, loadVersions],
   );
+
+  // mount: persist ?api / ?key and take them out of the address bar (the first API call resolved them already)
+  useEffect(() => {
+    cleanAddressBar();
+  }, []);
 
   // mount: initial load, periodic refresh while live, periodic retry while on a snapshot
   useEffect(() => {
@@ -611,6 +659,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!stateRef.current.canControl) throw new Error(NOT_REACHABLE);
     };
     return {
+      activateModel: async (version: string) => {
+        requireBackend();
+        if (stateRef.current.trainProgress !== null) {
+          throw new Error("A training round is running - switch models when it finishes.");
+        }
+        if (stateRef.current.switchingModel !== null) return;
+        dispatch({ type: "switching", version });
+        try {
+          const res = await api.activateModel(version);
+          dispatch({
+            type: "model",
+            data: { model_version: res.model_version, previous_model_version: res.previous_model_version },
+          });
+          void loadVersions();
+        } finally {
+          dispatch({ type: "switching", version: null });
+        }
+      },
       startStream: async (ratePerMin?: number) => {
         requireBackend();
         await api.streamStart(ratePerMin ?? DEFAULT_RATE);
@@ -653,7 +719,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
     };
-  }, [refreshLight, loadExtras, loadAll]);
+  }, [refreshLight, loadExtras, loadAll, loadVersions]);
 
   const value = useMemo<StoreValue>(() => ({ state, actions }), [state, actions]);
 

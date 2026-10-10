@@ -50,7 +50,7 @@ Set in `.env.local` (copy from `.env.example`). `NEXT_PUBLIC_*` values are **bak
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | Base URL of the FastAPI backend. On Vercel this is the cloudflared tunnel URL. |
+| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | Fallback base URL of the FastAPI backend. Overridden at runtime by `?api=<url>` (saved in the browser), so a tunnel URL needs no rebuild. The demo key is given with `?key=` and sent as `X-Demo-Key` on POSTs. |
 | `NEXT_PUBLIC_DATA_SOURCE` | `api` | `api` = use the live backend, falling back to a saved snapshot when it is unreachable. `snapshot` = never call the API; show the bundled snapshot only. |
 
 ## Data source and fallback order
@@ -138,8 +138,8 @@ The project is `understudy`; production is https://understudy-lake.vercel.app.
 1. Root Directory is `frontend`. Build and output settings stay at their defaults.
 2. Environment variables:
    - **No tunnel yet:** set `NEXT_PUBLIC_DATA_SOURCE=snapshot`. The deploy shows the bundled snapshot, never calls an API, and says so in its banner. Run `npm run sync:snapshot` and commit the file first so the deploy has the latest rounds.
-   - **With a tunnel:** set `NEXT_PUBLIC_API_URL` to the cloudflared `https://...trycloudflare.com` URL and `NEXT_PUBLIC_DATA_SOURCE=api`.
-3. Redeploy. `NEXT_PUBLIC_*` values are compiled into the bundle, so **every change to them needs a new deploy**; a quick tunnel gets a new URL each time it restarts.
+   - **With a tunnel:** leave `NEXT_PUBLIC_DATA_SOURCE` unset (`api`). Do **not** bake the tunnel URL in: open `https://<your-app>/live?api=https://<random>.trycloudflare.com&key=<demo key>` once. The page saves both in the browser and removes them from the address bar. A new tunnel URL needs only a new `?api=`, no rebuild (see `docs/BACKEND_INTEGRATION.md`).
+3. `NEXT_PUBLIC_*` values are still compiled into the bundle, so changing `NEXT_PUBLIC_DATA_SOURCE` needs a new deploy. `NEXT_PUBLIC_API_URL` is only the fallback when no `?api=` was ever given.
 
 Things to know:
 
@@ -159,7 +159,7 @@ cloudflared tunnel --url http://127.0.0.1:8000
 The quick tunnel prints a `https://<random>.trycloudflare.com` URL.
 
 1. Check it: `curl https://<random>.trycloudflare.com/api/health`.
-2. Set it as `NEXT_PUBLIC_API_URL` in Vercel (and `NEXT_PUBLIC_DATA_SOURCE=api`) and redeploy.
+2. Open the app once with `?api=<that URL>&key=<demo key>` (no redeploy; see `docs/BACKEND_INTEGRATION.md`).
 3. Make sure backend CORS allows the Vercel origin.
 
 The URL changes every time you restart the tunnel, which means another env update and redeploy. For a stable URL, create a named tunnel with a domain you control (`cloudflared tunnel login`, `cloudflared tunnel create`, route DNS, then `cloudflared tunnel run`).
@@ -193,7 +193,7 @@ If only one model is listed there, there is nothing to compare; use `/results` f
 | Changed `.env.local` but nothing changed | `NEXT_PUBLIC_` values are baked at build time. Rebuild (`npm run build`) or restart `npm run dev`. |
 | Browser console shows a CORS error | Backend CORS does not allow this origin (`http://localhost:3001` or the Vercel URL). |
 | Works locally, blocked on Vercel | Mixed content: the API URL is `http://`. Use the HTTPS cloudflared URL and redeploy. |
-| Vercel page worked, then fell back to snapshot | The quick tunnel restarted and got a new URL. Update `NEXT_PUBLIC_API_URL` and redeploy. |
+| Vercel page worked, then fell back to snapshot | The quick tunnel restarted and got a new URL. Open the page again with the new `?api=` (no redeploy). |
 | "Realtime stream unavailable, updating every 2 seconds" | SSE is blocked or buffered. Polling is covering it. |
 | Fewer rounds on screen than the backend has | The bundled snapshot is stale. Run `npm run sync:snapshot`, or start the backend. |
 | Port 3001 already in use | `npm start -- -p 3002` (and allow that origin in CORS). |

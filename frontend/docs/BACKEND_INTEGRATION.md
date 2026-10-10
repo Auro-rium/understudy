@@ -7,8 +7,16 @@ actually sends and expects. If the backend and this doc disagree, the code in `s
 ## 1. How the frontend talks to you
 
 - The frontend is a static Next.js app. **All requests are made by the browser**, not by a Next server. There is no proxy, so **CORS must be correct**.
-- Base URL comes from `NEXT_PUBLIC_API_URL` (default `http://127.0.0.1:8000`, trailing slash stripped). It is baked in at build time.
-- `NEXT_PUBLIC_DATA_SOURCE=api` (default) calls the backend. `snapshot` makes zero API calls and only shows the bundled export.
+- **The base URL is resolved at runtime in the browser** (`src/lib/runtime.ts`), so a new tunnel URL needs no rebuild. Priority:
+  1. `?api=<url>` query param, which is saved to `localStorage` (`understudy.api.v1`);
+  2. the saved `localStorage` value;
+  3. `NEXT_PUBLIC_API_URL` (build time; also used for server render);
+  4. `http://127.0.0.1:8000`.
+
+  Only `http(s)` URLs are accepted; the trailing slash is stripped. `?api=` with an empty value clears the saved override. The header shows `API: <host>` so the presenter can see which backend the page uses.
+- **Demo key:** `?key=<key>` is saved the same way (`understudy.demokey.v1`) and sent as the `X-Demo-Key` header on **every POST** (never on GETs). GETs under `/api/*` stay open. A POST answered `401`/`403` shows "Demo key missing or wrong - open the page with `?key=...`" inline; controls stay usable.
+- After `?api` and `?key` are saved the frontend removes them from the address bar with `history.replaceState` (other params and the hash stay), so the key is not left in the URL or in screenshots. If `localStorage` is unavailable (private mode, blocked), nothing is saved and the params are left in the URL so a reload keeps working.
+- `NEXT_PUBLIC_DATA_SOURCE=api` (default) calls the backend. `snapshot` (a build-time switch) makes zero API calls and only shows the bundled export.
 - Every request has a 4 s timeout. Anything slower counts as "unreachable".
 - Every response is normalised leniently (`src/lib/snapshot.ts`): missing keys get neutral defaults and nothing throws. Still send the documented shapes.
 
@@ -17,20 +25,22 @@ actually sends and expects. If the backend and this doc disagree, the code in `s
 Browsers on `http://localhost:3001` (local) and `https://understudy-lake.vercel.app` (Vercel) call the API cross-origin. Needed:
 
 - `Access-Control-Allow-Origin` for those origins (or `*`; no credentials are used).
-- `Access-Control-Allow-Methods: GET, POST, OPTIONS` and `Access-Control-Allow-Headers: Content-Type`. POST bodies are JSON, so a preflight happens.
+- `Access-Control-Allow-Methods: GET, POST, OPTIONS` and `Access-Control-Allow-Headers: Content-Type, X-Demo-Key`. POST bodies are JSON and carry `X-Demo-Key`, so a preflight happens (the preflight itself must not require the key).
 - The SSE endpoint (`/api/events`) must also carry the CORS headers. `EventSource` is subject to CORS.
 
 FastAPI: `CORSMiddleware(allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])` is enough for the demo.
 
 ### Vercel needs a public HTTPS URL
 
-A page served from Vercel (HTTPS) cannot reliably call `http://127.0.0.1:8000` on the presenter's Mac. Expose the backend with a tunnel, then rebuild the frontend with that URL:
+A page served from Vercel (HTTPS) cannot reliably call `http://127.0.0.1:8000` on the presenter's Mac. Expose the backend with a tunnel and hand the URL to the page at runtime. **No rebuild or redeploy**:
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:8000     # prints https://<random>.trycloudflare.com
-# in frontend/: set NEXT_PUBLIC_API_URL to that URL, then redeploy (it is baked at build time)
-vercel deploy --prod --build-env NEXT_PUBLIC_API_URL=https://<random>.trycloudflare.com
+# open once (the page saves both values and cleans the address bar):
+#   https://understudy-lake.vercel.app/live?api=https://<random>.trycloudflare.com&key=<demo key>
 ```
+
+When the tunnel URL changes, open the page again with the new `?api=`.
 
 Local demo (Wi-Fi off) needs no tunnel: `npm run build && npm start -- -p 3001` with the default `http://127.0.0.1:8000`.
 
@@ -51,7 +61,11 @@ Local demo (Wi-Fi off) needs no tunnel: `npm run build && npm start -- -p 3001` 
 | `POST /api/stream/start` `{rate_per_min}` | start simulated traffic | any 2xx, body ignored |
 | `POST /api/stream/stop` | stop it | any 2xx |
 | `POST /api/mode/offline` `{offline: boolean}` | force-offline toggle | any 2xx; mode must then show in `/api/health` and as a `mode` event |
+| `GET /api/model/versions` | model switch control on /live (open GET) | `{active, versions: [{version, available, promoted, category_macro_f1}]}`, e.g. `base`, `round_1`..`round_3` |
+| `POST /api/model/activate` `{version}` | switch the serving model (takes about 3-10 s; the frontend waits up to 30 s) | `{model_version, previous_model_version, changed, load_s}`. Errors `{detail}`: 401 key, 404 unknown/unavailable, 409 training round running, 500 load failure; `detail` is shown inline |
 | `GET /api/events` | SSE | see section 3 |
+
+All POST rows above need `X-Demo-Key` (sent automatically when a key was given with `?key=`).
 
 ### Payload shapes (all from `src/lib/types.ts`)
 
@@ -87,7 +101,7 @@ Rules that matter:
 
 ## 3. SSE: `GET /api/events`
 
-The frontend opens `new EventSource(API_URL + "/api/events")`. On error it falls back to polling every 2 s (`/api/tickets/recent?limit=30`, `/api/health`, `/api/rounds`) and retries SSE with backoff (1 s up to 15 s).
+The frontend opens `new EventSource(<runtime API URL> + "/api/events")`. On error it falls back to polling every 2 s (`/api/tickets/recent?limit=30`, `/api/health`, `/api/rounds`) and retries SSE with backoff (1 s up to 15 s).
 
 Two framings are accepted per message:
 
@@ -102,6 +116,8 @@ Event types:
 | `train_progress` | `{job_id, round, stage: "collect"\|"train"\|"evaluate"\|"promote", progress: 0..1, step?, total_steps?, loss?, message?}` | progress bar, loop diagram stage glow, live loss curve |
 | `round_complete` | `{job_id, round: Round, previous_model_version}`. A bare `Round` is also accepted. | round banner (promoted or blocked), model chip flips |
 | `mode` | `{mode: "online"\|"offline"}` | header badge and banner |
+| `model` | `{model_version, previous_model_version}` | model chip flips to `model_version`; the switch control reloads `/api/model/versions`. `/api/health.model_version` stays the source of truth and overrides the chip on the next 4 s refresh. |
+| any other type | ignored | unknown event types are tolerated; they never break the stream |
 | `train_progress` with `error` | same shape plus `error: "<message>"` | a failed round shows inline in the training UI. There is no separate `round_failed` event type; unknown types are ignored. |
 
 Send an initial comment or event soon after connect so `onopen` fires, and `Cache-Control: no-cache`, `Content-Type: text/event-stream`. Disable proxy buffering. Cloudflared passes SSE through.
@@ -128,21 +144,26 @@ B=http://127.0.0.1:8000
 curl -s $B/api/health
 curl -s $B/api/snapshot | head -c 400
 curl -s -i -X OPTIONS $B/api/train/round -H 'Origin: http://localhost:3001' \
-  -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type' | head   # expect 200 + Allow-Origin
+  -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,x-demo-key' | head   # expect 200 + Allow-Origin + Allow-Headers incl. x-demo-key
 curl -s -N -H 'Origin: http://localhost:3001' $B/api/events | head -5                                  # expect text/event-stream
-curl -s -X POST $B/api/stream/start -H 'content-type: application/json' -d '{"rate_per_min":30}'
+curl -s $B/api/model/versions                                                                          # active + versions with category_macro_f1
+curl -s -X POST $B/api/stream/start -H 'content-type: application/json' -d '{"rate_per_min":30}'      # expect 401 without the key
+curl -s -X POST $B/api/stream/start -H 'content-type: application/json' -H "X-Demo-Key: $KEY" -d '{"rate_per_min":30}'
 curl -s "$B/api/tickets/recent?limit=3"                                                                  # newest first, category letters
-curl -s -X POST $B/api/mode/offline -H 'content-type: application/json' -d '{"offline":true}'
+curl -s -X POST $B/api/mode/offline -H 'content-type: application/json' -H "X-Demo-Key: $KEY" -d '{"offline":true}'
+curl -s -X POST $B/api/model/activate -H 'content-type: application/json' -H "X-Demo-Key: $KEY" -d '{"version":"round_2"}'   # 3-10 s
 ```
 
-Then run the frontend (`npm run build && npm start -- -p 3001`, open `http://localhost:3001/live`). Expected: no "SNAPSHOT" badge, controls enabled, counters and feed moving, force-offline flips the badge.
+Then run the frontend (`npm run build && npm start -- -p 3001`, open `http://localhost:3001/live?key=<demo key>`; add `&api=<url>` for a non-default backend). Expected: no "SNAPSHOT" badge, controls enabled, counters and feed moving, force-offline flips the badge.
 
 Common failures:
 
 | Symptom | Cause |
 |---|---|
 | Stays on SNAPSHOT although the API is up | CORS missing, or `/api/snapshot` is returning errors. Check the browser console and network tab. |
-| Controls disabled | The frontend counts the backend as unreachable (timeout over 4 s, CORS, wrong `NEXT_PUBLIC_API_URL`). Rebuild after changing it. |
+| Controls disabled | The frontend counts the backend as unreachable (timeout over 4 s, CORS, wrong API URL). Check the `API: <host>` tag in the header; reopen the page with the right `?api=`. |
+| "Demo key missing or wrong" under a control | Open the page once with `?key=<demo key>`; it is saved and removed from the address bar. |
+| Model switch buttons greyed out | Training round running, version `available:false`, backend unreachable/snapshot, or `/api/model/versions` missing. |
 | Feed updates only every 2 s | SSE is failing and polling took over. Check headers and proxy buffering. |
 | Everything shows the old model | `health.model_version` is stale, or the snapshot was not regenerated. |
-| Vercel page cannot reach the API | Using `127.0.0.1` instead of the tunnel URL, or the tunnel URL changed (it is baked at build time). |
+| Vercel page cannot reach the API | Using `127.0.0.1` instead of the tunnel URL, or the tunnel URL changed. Open the page with the new `?api=` (no rebuild). A stale saved URL can be cleared with `?api=` (empty). |

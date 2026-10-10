@@ -4,13 +4,14 @@
  * subscribe() does nothing (zero API calls).
  */
 
-import { API_CONFIGURED, API_URL, api } from "@/lib/api";
-import { normalizeRoundComplete, normalizeTicket, normalizeTrainProgress } from "@/lib/snapshot";
+import { API_CONFIGURED, api } from "@/lib/api";
+import { getApiUrl } from "@/lib/runtime";
+import { normalizeModelSwitched, normalizeRoundComplete, normalizeTicket, normalizeTrainProgress } from "@/lib/snapshot";
 import type { Mode, ServerEvent } from "@/lib/types";
 
 export type EventStatus = "sse" | "polling" | "down";
 
-const EVENT_TYPES = ["prediction", "train_progress", "round_complete", "mode"] as const;
+const EVENT_TYPES = ["prediction", "train_progress", "round_complete", "mode", "model"] as const;
 const POLL_MS = 2000;
 const MAX_BACKOFF_MS = 15000;
 const POLL_TICKETS = 30;
@@ -41,8 +42,12 @@ function build(type: string, data: unknown): ServerEvent | null {
       const m = (data as { mode?: unknown } | null)?.mode;
       return m === "online" || m === "offline" ? { type: "mode", data: { mode: m } } : null;
     }
+    case "model": {
+      const m = normalizeModelSwitched(data);
+      return m ? { type: "model", data: m } : null;
+    }
     default:
-      return null;
+      return null; // unknown event types are ignored
   }
 }
 
@@ -109,10 +114,18 @@ export function subscribe(
         if (lastMode !== null && health.mode !== lastMode) {
           onEvent({ type: "mode", data: { mode: health.mode } });
         }
-        for (const r of rounds.filter((x) => x.round > lastRound).sort((a, b) => a.round - b.round)) {
+        const newRounds = rounds.filter((x) => x.round > lastRound).sort((a, b) => a.round - b.round);
+        for (const r of newRounds) {
           onEvent({
             type: "round_complete",
             data: { job_id: `poll-${r.round}`, round: r, previous_model_version: lastVersion },
+          });
+        }
+        // a manual model switch has no round: report it from /api/health
+        if (newRounds.length === 0 && lastVersion && health.model_version && health.model_version !== lastVersion) {
+          onEvent({
+            type: "model",
+            data: { model_version: health.model_version, previous_model_version: lastVersion },
           });
         }
       }
@@ -141,7 +154,7 @@ export function subscribe(
     if (closed) return;
     let source: EventSource;
     try {
-      source = new EventSource(`${API_URL}/api/events`);
+      source = new EventSource(`${getApiUrl()}/api/events`);
     } catch {
       startPolling();
       retryTimer = setTimeout(connect, backoff);
