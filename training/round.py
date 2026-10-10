@@ -30,7 +30,7 @@ if str(ROOT) not in sys.path:
 
 from eval.run import (RESULTS, DATA, evaluate_classifier, load_jsonl, load_test,  # noqa: E402
                       read_result, write_result)
-from training.base import NotEnabled, Trainer  # noqa: E402
+from training.base import Trainer  # noqa: E402
 
 _round_lock = threading.Lock()
 
@@ -39,12 +39,6 @@ def get_trainer(name: str, **kw) -> Trainer:
     if name == "mlx_local":
         from training.mlx_local import MlxLocalTrainer
         return MlxLocalTrainer(**kw)
-    if name == "aws":
-        from training.aws import AwsTrainer
-        return AwsTrainer()
-    if name == "modal":
-        from training.modal import ModalTrainer
-        return ModalTrainer()
     raise ValueError(f"unknown training backend {name!r}")
 
 
@@ -152,8 +146,7 @@ def run_round(backend, trainer: Optional[Trainer] = None, trainer_name: str = "m
 
 
 class RoundJob(threading.Thread):
-    """Thread running a round. Also awaitable (`await job`) so FastAPI can `await` it without
-    blocking the loop; re-raises the round's exception. `.error` / `.row` hold the outcome."""
+    """Thread running a round. `.error` / `.row` hold the outcome."""
 
     def __init__(self, fn):
         super().__init__(name="train-round", daemon=True)
@@ -167,51 +160,19 @@ class RoundJob(threading.Thread):
         finally:
             _round_lock.release()
 
-    def __await__(self):
-        import asyncio
 
-        async def _wait():
-            while self.is_alive():
-                await asyncio.sleep(0.2)
-            if self.error:
-                raise self.error
-            return self.row
-        return _wait().__await__()
-
-
-def run_round_async(backend="mlx_local", ctx=None, job_id=None, progress=None, on_event=None,
-                    **kw) -> RoundJob:
-    """Start a round in a thread. Only one at a time (RuntimeError if busy).
-
-    Called by backend.app as run_round_async(backend=<'mlx_local'|'aws'|'modal'>, job_id=, ctx=, progress=)
-    -> `backend` is a trainer NAME and `ctx` (AppContext) supplies db/holder/router. For tests/other
-    callers pass a RoundBackend object as `backend` plus trainer=/trainer_name= kwargs.
-    `progress`/`on_event` receive events; app's round_complete is published by the app itself, so
-    progress does not get 'round_complete'.
-    """
-    if isinstance(backend, str):
-        from training.db_backend import DbRoundBackend
-        kw.setdefault("trainer_name", backend)
-        rb = DbRoundBackend(ctx)
-    else:
-        rb = backend
-    cbs = [c for c in (on_event,) if c]
-
-    def emit(e):
-        for c in cbs:
-            c(e)
-        if progress and e.get("type") != "round_complete":
-            progress(e)
-
+def run_round_async(backend, on_event: Optional[Callable[[dict], None]] = None, **kw) -> RoundJob:
+    """Start run_round(backend, ...) in a thread. Only one at a time (RuntimeError if busy).
+    on_event receives every event; a failure is reported as {"type": "round_failed", "error": ...}."""
+    emit = on_event or (lambda e: None)
     if not _round_lock.acquire(blocking=False):
         raise RuntimeError("a training round is already running")
 
     def work():
         try:
-            return run_round(rb, on_event=emit, **kw)
+            return run_round(backend, on_event=emit, **kw)
         except Exception as e:
-            emit({"type": "round_failed", "stage": "error",
-                  "error": f"not enabled: {e}" if isinstance(e, NotEnabled) else str(e)})
+            emit({"type": "round_failed", "stage": "error", "error": str(e)})
             raise
 
     job = RoundJob(work)
@@ -225,12 +186,12 @@ def run_round_async(backend="mlx_local", ctx=None, job_id=None, progress=None, o
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", default="mlx_local", choices=["mlx_local", "aws", "modal"])
+    ap.add_argument("--backend", default="mlx_local", choices=["mlx_local"])
     ap.add_argument("--seed-from-train-pool", action="store_true")
     ap.add_argument("--iters", type=int)
     ap.add_argument("--min-delta", type=float, default=0.0)
     a = ap.parse_args(argv)
-    from training.db_backend import get_round_backend
+    from backend.round_backend import get_round_backend
     row = run_round(get_round_backend(), trainer_name=a.backend,
                     seed_from_train_pool=a.seed_from_train_pool, iters=a.iters, min_delta=a.min_delta,
                     on_event=lambda e: print(json.dumps(e), flush=True))

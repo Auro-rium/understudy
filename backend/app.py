@@ -21,7 +21,7 @@ from backend.router import ModeState, Router
 from backend.schemas import (CATEGORIES, TEAMS, ClassifyRequest, ClassifyResult, Health, MetricsSummary,
                              OfflineRequest, ReviewItem, RoundOut, StreamStart, TicketOut, TimePoint,
                              TrainRequest)
-from backend import demo_api, teacher_iface, telemetry
+from backend import demo_api, round_backend, telemetry
 from backend.demo_api import require_key
 from common.teacher import load_env
 
@@ -60,12 +60,12 @@ def default_teacher():
     if kind == "fake":
         from backend.fakes import FakeTeacher
         return FakeTeacher()
-    if teacher_iface.TEACHER_AVAILABLE and teacher_iface.Teacher is not None:
-        try:
-            return teacher_iface.Teacher()
-        except Exception as e:  # missing API key etc.
-            print(f"[backend] teacher unavailable: {e!r}; low-confidence tickets go to review")
-    return None
+    try:
+        from common.teacher import Teacher
+        return Teacher()
+    except Exception as e:  # missing API key etc.
+        print(f"[backend] teacher unavailable: {e!r}; low-confidence tickets go to review")
+        return None
 
 
 def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = None, teacher="auto",
@@ -77,13 +77,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
     events = Broadcaster()
     version = "base"
     if load_promoted:  # a restart keeps the promoted model instead of falling back to base
-        from training.db_backend import latest_promoted_adapter
-        cur = latest_promoted_adapter(db)
-        if cur:
-            try:
-                classifier, version = classifier.with_adapter(cur[1]), cur[0]
-            except Exception as e:  # e.g. ServerClassifier cannot apply adapters
-                print(f"[backend] could not load promoted adapter {cur[0]}: {e!r}; serving base")
+        classifier, version = round_backend.load_promoted(classifier, db)
     ctx = AppContext(db, ModelHolder(classifier, version), teacher, events)
     interval = probe_interval_s if probe_interval_s is not None else float(os.environ.get("HEALTH_PROBE_S", 10))
 
@@ -110,8 +104,6 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(telemetry.RequestTelemetry, tele=ctx.telemetry)
     app.state.ctx = ctx
-    from backend.round_backend import set_current_ctx
-    set_current_ctx(ctx)
 
     # ------------------------------------------------------------ reads
     def health():
@@ -172,7 +164,6 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
             from training.round import run_round_async  # type: ignore
         except Exception as e:
             raise HTTPException(501, f"training.round.run_round_async is not available yet ({e!r})")
-        from backend.round_backend import AppRoundBackend
         job_id = uuid.uuid4().hex[:12]
         previous = ctx.holder.version
 
@@ -189,7 +180,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
 
         ctx.jobs[job_id] = "running"
         try:
-            run_round_async(AppRoundBackend(ctx), on_event=on_event, trainer_name=req.backend)
+            run_round_async(round_backend.RoundBackend(ctx), on_event=on_event, trainer_name=req.backend)
         except RuntimeError as e:  # a round is already running
             ctx.jobs.pop(job_id, None)
             raise HTTPException(409, str(e))

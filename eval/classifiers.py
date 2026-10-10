@@ -49,6 +49,8 @@ class BackendAdapter:
                 "latency_ms": (time.perf_counter() - t0) * 1000}
 
     def close(self):
+        if hasattr(self.clf, "unload"):
+            self.clf.unload()
         self.clf = None
         gc.collect()
         try:

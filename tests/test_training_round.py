@@ -10,9 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from eval.classifiers import FakeClassifier  # noqa: E402
 from training import mlx_local  # noqa: E402
 from training import round as RD  # noqa: E402
-from training.aws import AwsTrainer  # noqa: E402
-from training.base import NotEnabled, Trainer, TrainResult  # noqa: E402
-from training.modal import ModalTrainer  # noqa: E402
+from training.base import Trainer, TrainResult  # noqa: E402
 from training.prompt import SYSTEM_PROMPT, build_messages, parse_answer  # noqa: E402
 
 L = "ABCDEFGH"
@@ -92,15 +90,10 @@ def test_mlx_train_failure_raises(tmp_path):
         t.train(1, d)
 
 
-def test_aws_and_modal_not_enabled(monkeypatch):
-    monkeypatch.delenv("AWS_TRAIN_ENABLED", raising=False)
-    with pytest.raises(NotEnabled):
-        AwsTrainer()
-    monkeypatch.setenv("AWS_TRAIN_ENABLED", "1")
-    with pytest.raises(NotEnabled):
-        AwsTrainer().train(1, "x")
-    with pytest.raises(NotEnabled):
-        ModalTrainer().train(1, "x")
+def test_only_mlx_local_trainer():
+    assert RD.get_trainer("mlx_local").name == "mlx_local"
+    with pytest.raises(ValueError):
+        RD.get_trainer("aws")
 
 
 # ---------------- promotion gate ----------------

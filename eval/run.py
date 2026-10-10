@@ -178,7 +178,7 @@ def _adapter_for(name: str) -> Optional[str]:
 
 def _latest_promoted_adapter() -> Optional[str]:
     try:
-        from training.db_backend import latest_promoted_adapter
+        from backend.round_backend import latest_promoted_adapter
         from backend.db import DB
         r = latest_promoted_adapter(DB())
         return r[1] if r else None

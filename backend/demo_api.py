@@ -66,11 +66,11 @@ def _flatten(content) -> str:
 
 
 def install(app, ctx, events):
-    import training.db_backend as dbb
+    from backend import round_backend
     activate_lock = threading.Lock()
 
     def adapter_dir(version: str):
-        return dbb.ADAPTERS / version
+        return round_backend.ADAPTERS / version
 
     def versions_view() -> dict:
         from backend import metrics

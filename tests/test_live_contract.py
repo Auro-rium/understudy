@@ -45,7 +45,7 @@ def test_failed_round_carries_error():
 
 
 def test_startup_loads_latest_promoted_adapter(tmp_path, monkeypatch):
-    import training.db_backend as dbb
+    import backend.round_backend as dbb
     monkeypatch.setattr(dbb, "ADAPTERS", tmp_path / "adapters")
     (tmp_path / "adapters" / "round_2").mkdir(parents=True)
     db = DB(str(tmp_path / "t.sqlite"))
@@ -62,7 +62,7 @@ def test_startup_loads_latest_promoted_adapter(tmp_path, monkeypatch):
 
 
 def test_startup_without_adapter_dir_falls_back_to_base(tmp_path, monkeypatch):
-    import training.db_backend as dbb
+    import backend.round_backend as dbb
     monkeypatch.setattr(dbb, "ADAPTERS", tmp_path / "nothing")
     db = DB(str(tmp_path / "t.sqlite"))
     db.insert_round(round=1, model_version="round_1", examples=1, loss=[], wall_time_s=1, hardware="t",

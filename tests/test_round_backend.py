@@ -1,5 +1,4 @@
 """Round pipeline against the real backend.db / ModelHolder / Router with fake classifiers."""
-import asyncio
 import sys
 from pathlib import Path
 
@@ -11,7 +10,7 @@ pytest.importorskip("httpx")
 
 from eval.classifiers import FakeClassifier  # noqa: E402
 from training import round as RD  # noqa: E402
-from training.db_backend import DbRoundBackend  # noqa: E402
+from backend.round_backend import RoundBackend  # noqa: E402
 from tests.test_training_round import FakeTrainer, L, env  # noqa: E402,F401
 
 
@@ -35,7 +34,7 @@ def _ctx(n_examples=6):
 
 
 def _be(ctx, gold, **kw):
-    return DbRoundBackend(ctx, classifier_factory=lambda ad: FakeClassifier(
+    return RoundBackend(ctx, classifier_factory=lambda ad: FakeClassifier(
         skill=0.0 if ad is None else 1.0, gold=gold), **kw)
 
 
@@ -66,28 +65,29 @@ def test_gate_uses_promoted_round(env):
     assert [r["promoted"] for r in ctx.db.list_rounds()] == [True, False]
 
 
-def test_pause_resume_hooks(env):
-    d, res, gold = env
-    calls = []
-    be = _be(_ctx(4), gold, pause_hook=lambda: calls.append("pause"),
-             resume_hook=lambda: calls.append("resume"))
-    RD.run_round(be, trainer=FakeTrainer(), data_dir=d, results_dir=res)
-    assert calls == ["pause", "resume"]
-
-
-def test_async_awaitable_job(env):
+def test_serving_paused_during_training_and_resumed(env):
     d, res, gold = env
     ctx = _ctx(4)
-    prog = []
-    job = RD.run_round_async(_be(ctx, gold), progress=prog.append, trainer=FakeTrainer(),
+    seen = []
+
+    class Probe(FakeTrainer):
+        def train(self, round, data_dir, on_progress=None):
+            seen.append(ctx.holder._paused)
+            return super().train(round, data_dir, on_progress)
+
+    RD.run_round(_be(ctx, gold), trainer=Probe(), data_dir=d, results_dir=res)
+    assert seen == [True] and ctx.holder._paused is False
+    assert ctx.holder.classify("t0")[1] == "round_1"  # serving again, on the promoted version
+
+
+def test_async_job_events(env):
+    d, res, gold = env
+    events = []
+    job = RD.run_round_async(_be(_ctx(4), gold), on_event=events.append, trainer=FakeTrainer(),
                              data_dir=d, results_dir=res)
-
-    async def go():
-        return await job
-
-    row = asyncio.run(go())
-    assert row["promoted"] and any(e["type"] == "train_progress" for e in prog)
-    assert not any(e["type"] == "round_complete" for e in prog)  # the app publishes that itself
+    job.join(10)
+    assert job.row["promoted"] and job.error is None
+    assert any(e["type"] == "train_progress" for e in events) and events[-1]["type"] == "round_complete"
 
 
 def test_shared_prompt_is_serving_prompt():

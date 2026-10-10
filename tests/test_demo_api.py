@@ -19,7 +19,7 @@ EV = {"category_acc": 0.9, "category_macro_f1": 0.9, "priority_acc": 0.8}
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    import training.db_backend as dbb
+    import backend.round_backend as dbb
     monkeypatch.setattr(dbb, "ADAPTERS", tmp_path / "adapters")
     monkeypatch.setenv("EVAL_RESULTS_DIR", str(tmp_path / "none"))
     monkeypatch.setenv("DEMO_PATH", str(tmp_path / "demo.jsonl"))

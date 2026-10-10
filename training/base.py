@@ -6,10 +6,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 
-class NotEnabled(RuntimeError):
-    """Backend exists as a skeleton but is not enabled/configured."""
-
-
 @dataclass
 class TrainResult:
     adapter_path: str
