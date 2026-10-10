@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+/*
+ * Understudy design tokens — dark only (projector-first).
+ * Series colours are the dark column of the validated dataviz palette:
+ *   local = blue (slot 1), teacher = orange (slot 2), review = violet (slot 7).
+ * Colour is never the only signal: chips and legends always carry text.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #0b0d14;
+  --surface: #12151f;
+  --surface-2: #181c29;
+  --surface-3: #202536;
+  --line: #262b3b;
+  --line-strong: #353c52;
+
+  --text: #f2f0ea;
+  --text-2: #bcc0d0;
+  --text-3: #8d92a8;
+
+  /* source identity */
+  --local: #3987e5;
+  --teacher: #d95926;
+  --review: #9085e9;
+
+  /* meaning */
+  --save: #199e70;
+  --spot: #f2c14e; /* "live / active right now" highlight */
+  --warn: #c98500;
+  --bad: #e66767;
+  --good: #3fb68b;
+
+  /* sequential ramp (blue) for heatmaps */
+  --seq-100: #cde2fb;
+  --seq-250: #86b6ef;
+  --seq-400: #3987e5;
+  --seq-550: #1c5cab;
+  --seq-700: #0d366b;
+
+  --font-display: ui-serif, "New York", "Iowan Old Style", "Charter", Georgia, serif;
+  --font-body: system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
+  --color-local: var(--local);
+  --color-teacher: var(--teacher);
+  --color-review: var(--review);
+  --color-save: var(--save);
+  --color-spot: var(--spot);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-good: var(--good);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers that change must not jitter. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--spot);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* In the base layer so utilities like text-bg / text-ink-3 on links still win. */
+@layer base {
+  a {
+    color: inherit;
+  }
+}
+
+/* Recharts: quiet grid + axes */
+.recharts-cartesian-grid line {
+  stroke: var(--line);
+}
+.recharts-text {
+  fill: var(--text-3);
+}
+
+/* Subtle ambient "stage light" used behind hero areas */
+.stage-glow {
+  background:
+    radial-gradient(60rem 28rem at 50% -10%, rgba(57, 135, 229, 0.16), transparent 70%),
+    radial-gradient(40rem 20rem at 90% 10%, rgba(242, 193, 78, 0.07), transparent 70%);
+}
+
+/* Entry animation for freshly arrived feed rows. */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    background: rgba(242, 193, 78, 0.16);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    background: transparent;
+  }
+}
+.row-in {
+  animation: row-in 700ms ease-out both;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.55); }
+  100% { box-shadow: 0 0 0 14px rgba(242, 193, 78, 0); }
+}
+.pulse-ring {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
