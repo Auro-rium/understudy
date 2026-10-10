@@ -19,7 +19,7 @@ hf_token() {  # env first, then .env
 }
 
 [[ -e "$LOCK" ]] && { echo "already launched once ($LOCK exists); delete it to allow another run"; exit 0; }
-REGIONS="${REGIONS:-us-east-1 us-west-2}"   # watch several regions, launch in the first approved one
+REGIONS="${REGIONS:-us-east-1 us-west-2 us-east-2 ap-south-1}"   # watch several regions, launch in the first approved one
 warned_token=0; last=""; denied=" "
 while true; do
   alive=0; snap=""
