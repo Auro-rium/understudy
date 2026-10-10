@@ -11,6 +11,7 @@ Writes eval/results/live_test.json. Every number is read from the API / SQLite, 
 """
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import threading
@@ -22,6 +23,7 @@ import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from common.teacher import load_env  # noqa: E402
 from eval.metrics import LETTERS, macro_f1, accuracy  # noqa: E402
 
 TICKET_KEYS = {"id", "text", "created_at", "category", "category_name", "priority", "team", "source",
@@ -86,7 +88,11 @@ def main():
     ap.add_argument("--out", default=str(ROOT / "eval" / "results" / "live_test.json"))
     a = ap.parse_args()
     base = a.base.rstrip("/")
-    c = httpx.Client(base_url=base, timeout=120, headers={"Origin": a.origin})
+    load_env()  # DEMO_KEY: the server requires X-Demo-Key on mutating endpoints when it is set
+    key = os.environ.get("DEMO_KEY", "").strip()
+    c = httpx.Client(base_url=base, timeout=120, headers={"Origin": a.origin, **({"X-Demo-Key": key} if key else {})})
+    with sqlite3.connect(a.db, timeout=30) as _b:  # teacher examples that already existed before this run
+        base_teacher_examples = _b.execute("SELECT COUNT(*) FROM training_examples WHERE source='teacher'").fetchone()[0]
     demo = [json.loads(l) for l in Path(a.demo).read_text().splitlines() if l.strip()]
     if a.limit:
         demo = demo[:a.limit]
@@ -198,7 +204,7 @@ def main():
         after = c.get("/api/metrics/summary").json()
         check("cost_avoided_usd > 0 once a teacher call exists", after["cost_avoided_usd"] > 0, after["cost_avoided_usd"])
         te = db.execute("SELECT COUNT(*), COALESCE(SUM(cost_usd),0) FROM cost_ledger").fetchone()
-        tr = db.execute("SELECT COUNT(*) FROM training_examples WHERE source='teacher'").fetchone()[0]
+        tr = db.execute("SELECT COUNT(*) FROM training_examples WHERE source='teacher'").fetchone()[0] - base_teacher_examples
         a_teach = [t for _, t in scored if t["source"] == "teacher"]  # phase-A escalations count too
         n_t = len(a_teach) + len(teach)
         cost_t = sum(t["cost_usd"] for t in a_teach) + sum(r["cost_usd"] for _, r in teach)
