@@ -4,12 +4,12 @@ const PAGES = [
   {
     href: "/live",
     title: "Live",
-    body: "Start a stream of tickets and watch each one get routed, then turn the network off and work the review queue.",
+    body: "With the backend running, start a stream of tickets and watch each one get routed, then turn the network off and work the review queue.",
   },
   {
     href: "/training",
     title: "Training",
-    body: "Run a training round and follow it from collecting examples to promoting the new model version.",
+    body: "Every training round so far: loss curve, test-set scores, and whether it was promoted or rejected. With the backend running you can start a new one.",
   },
   {
     href: "/results",

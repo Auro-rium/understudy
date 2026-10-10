@@ -7,7 +7,7 @@ const STEPS = [
   },
   {
     name: "Local model",
-    body: "Gemma on this machine picks a category and priority, which decides the team. If it is sure, we are done.",
+    body: "The small model on this machine picks a category and priority, which decides the team. If it is sure, we are done.",
     dot: "border-local",
     text: "text-local",
   },
@@ -58,8 +58,9 @@ export function Loop() {
         </ol>
 
         <p className="mt-8 max-w-3xl text-lg text-ink-3">
-          Then the loop closes: the new version serves the next tickets, handles more of them itself, and
-          asks the teacher less. That falling cloud bill is what the numbers above are measuring.
+          Then the loop closes: the new version serves the next tickets. A new version is only promoted if
+          its macro-F1 on the test set beats the one already serving, which is why a round can be rejected.
+          Handling more locally means a smaller cloud bill; the live counters measure that once tickets flow.
         </p>
       </div>
     </section>
