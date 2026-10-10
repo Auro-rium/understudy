@@ -1,4 +1,5 @@
 """Confidence router: local model when confident, teacher otherwise, review queue when offline."""
+import json
 import os
 import threading
 import time
@@ -62,7 +63,35 @@ def avg_teacher_cost(db: DB):
         est = float(os.environ.get("TEACHER_COST_ESTIMATE_PER_CALL") or 0.0)
     except ValueError:
         est = 0.0
-    return est, "configured_estimate"
+    if est > 0:
+        return est, "configured_estimate"
+    lab = _labeling_run_avg_cost()
+    return (lab, "labeling_run_average") if lab else (0.0, "configured_estimate")
+
+
+_LAB_CACHE: dict = {}
+
+
+def _labeling_run_avg_cost() -> float:
+    """Measured average cost per teacher call from the dataset-labeling run (data/labeled.jsonl keeps each
+    call's real token cost). Lets the 'cloud-only' counterfactual exist before any live teacher call.
+    LABELED_PATH=none disables it."""
+    path = os.environ.get("LABELED_PATH", "data/labeled.jsonl")
+    if path not in _LAB_CACHE:
+        total, n = 0.0, 0
+        try:
+            with open(path) as f:
+                for line in f:
+                    try:
+                        c = json.loads(line).get("label_cost_usd")
+                    except ValueError:
+                        continue
+                    if isinstance(c, (int, float)) and c > 0:
+                        total, n = total + c, n + 1
+        except OSError:
+            pass
+        _LAB_CACHE[path] = total / n if n else 0.0
+    return _LAB_CACHE[path]
 
 
 class Router:
