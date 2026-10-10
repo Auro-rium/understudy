@@ -3,7 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useStore } from "@/lib/store";
 import { fmtInt, fmtPct, fmtUsd } from "@/lib/format";
-import { AnimatedNumber, ModeBadge, Skeleton, StatTile, cx } from "@/components/ui";
+import { AnimatedNumber, EmptyState, ModeBadge, Skeleton, StatTile, cx } from "@/components/ui";
 
 /** Version tile: the big version string flips like a departure board when it changes. */
 function VersionTile({ version, mode, pulse }: { version: string; mode: "online" | "offline"; pulse: boolean }) {
@@ -41,7 +41,7 @@ export function LiveCounters({ pulse }: { pulse: boolean }) {
   const { state } = useStore();
   const s = state.summary;
 
-  if (!state.loaded || !s) {
+  if (!state.loaded) {
     return (
       <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
@@ -50,6 +50,11 @@ export function LiveCounters({ pulse }: { pulse: boolean }) {
       </div>
     );
   }
+  if (!s) {
+    return <EmptyState title="No data to show" hint="The backend is unreachable and no saved snapshot is available." />;
+  }
+
+  const idle = !(s.total > 0);
 
   return (
     <section aria-label="Headline numbers" className="grid gap-x-10 gap-y-8 sm:grid-cols-2 xl:grid-cols-4 2xl:gap-y-0">
@@ -57,8 +62,18 @@ export function LiveCounters({ pulse }: { pulse: boolean }) {
         valueClassName="2xl:text-[4.75rem]"
         label="Handled locally"
         accent="local"
-        value={<AnimatedNumber value={s.local_share} format={(n) => fmtPct(n, 1)} />}
-        sub={`${fmtInt(s.total)} tickets · teacher ${fmtPct(s.teacher_share)} · review ${fmtPct(s.review_share)}`}
+        value={
+          idle ? (
+            <span aria-label="No tickets yet">–</span>
+          ) : (
+            <AnimatedNumber value={s.local_share} format={(n) => fmtPct(n, 1)} />
+          )
+        }
+        sub={
+          idle
+            ? "No live traffic recorded yet"
+            : `${fmtInt(s.total)} tickets · teacher ${fmtPct(s.teacher_share)} · review ${fmtPct(s.review_share)}`
+        }
       />
       <StatTile
         valueClassName="2xl:text-[4.75rem]"

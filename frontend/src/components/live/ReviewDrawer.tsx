@@ -80,7 +80,7 @@ export function ReviewDrawer({
                   Review queue
                 </h2>
                 <p className="mt-1 text-base text-ink-3">
-                  Unsure tickets that could not reach the teacher. A human picks these up.
+                  Tickets the local model was unsure about and the teacher could not answer. A person picks these up.
                 </p>
               </div>
               <button
@@ -96,14 +96,16 @@ export function ReviewDrawer({
               {items.length === 0 ? (
                 <EmptyState
                   title="Nothing waiting for review"
-                  hint="Force offline and stream tickets to see unsure ones land here."
+                  hint="No ticket has been sent to review yet. Unsure tickets land here when the teacher is unreachable."
                 />
               ) : (
                 <ul className="space-y-3">
                   {items.map((it) => (
                     <li key={it.id} className="rounded-lg border border-review/40 bg-review/5 px-4 py-3">
                       <p className="text-lg leading-snug text-ink">{it.text}</p>
-                      <p className="num mt-1 text-base text-ink-3">Queued {fmtTime(it.created_at)}</p>
+                      <p className="num mt-1 text-base text-ink-3">
+                        Ticket #{it.id} · queued {fmtTime(it.created_at)}
+                      </p>
                     </li>
                   ))}
                 </ul>

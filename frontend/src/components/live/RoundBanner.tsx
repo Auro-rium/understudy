@@ -1,9 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { LastRound } from "@/lib/store";
+import { useStore, type LastRound } from "@/lib/store";
 import { fmtDelta, fmtInt, fmtPct } from "@/lib/format";
-import { cx } from "@/components/ui";
+import { ProvisionalBadge, cx } from "@/components/ui";
 
 export function RoundBanner({ round, onDismiss }: { round: LastRound | null; onDismiss: () => void }) {
   const reduce = useReducedMotion();
@@ -16,6 +16,8 @@ export function RoundBanner({ round, onDismiss }: { round: LastRound | null; onD
   );
 }
 
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
 function BannerCard({
   round: lr,
   onDismiss,
@@ -25,9 +27,17 @@ function BannerCard({
   onDismiss: () => void;
   reduce: boolean;
 }) {
-  const promoted = lr.round.promoted;
+  const { state } = useStore();
+  const r = lr.round;
+  const promoted = !!r.promoted;
+  const f1 = r.eval?.category_macro_f1;
+  const acc = r.eval?.category_acc;
+  // Local share before/after is a live measurement: it only means something once traffic exists.
   const deltaPts = lr.delta * 100;
-  const changed = Math.abs(deltaPts) >= 0.05;
+  const showShare = promoted && (state.summary?.total ?? 0) > 0 && finite(deltaPts) && Math.abs(deltaPts) >= 0.05;
+  const version = r.model_version || `round ${r.round}`;
+  const previous = lr.previousVersion;
+
   return (
     <motion.div
       role="status"
@@ -49,44 +59,60 @@ function BannerCard({
         <span aria-hidden>×</span>
       </button>
 
-      <p className={cx("text-base font-semibold uppercase tracking-wider", promoted ? "text-good" : "text-spot")}>
-        {promoted ? `Training round ${lr.round.round} complete` : `Training round ${lr.round.round} rejected`}
+      <p className={cx("text-lg font-semibold", promoted ? "text-good" : "text-spot")}>
+        {promoted ? `Training round ${r.round} complete` : `Training round ${r.round} not promoted`}
       </p>
       <h2 className="display mt-1 pr-12 text-[clamp(1.75rem,1.2rem+2vw,2.75rem)] font-semibold leading-tight text-ink">
-        {promoted
-          ? `New model ${lr.round.model_version} live`
-          : "Candidate model blocked by the evaluation gate"}
-      </h2>
-
-      {promoted ? (
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className="text-lg text-ink-2">Handled locally</span>
-          <span className="num text-3xl font-semibold text-ink-2">{fmtPct(lr.localShareBefore, 1)}</span>
-          <span aria-hidden className="text-2xl text-ink-3">
-            →
-          </span>
-          <span className="num text-4xl font-semibold text-ink">{fmtPct(lr.localShareAfter, 1)}</span>
-          {changed ? (
-            <span className={cx("num text-2xl font-semibold", deltaPts >= 0 ? "text-good" : "text-bad")}>
-              {fmtDelta(deltaPts)}
-            </span>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mt-3 space-y-1">
-          {lr.round.reason ? <p className="text-xl text-ink">{lr.round.reason}</p> : null}
-          <p className="text-lg text-ink-2">
-            Still serving <span className="font-mono font-semibold text-ink">{lr.previousVersion}</span>
-            {" · "}handled locally stays at <span className="num font-semibold text-ink">{fmtPct(lr.localShareBefore, 1)}</span>
-          </p>
-        </div>
-      )}
-
-      <p className="mt-3 text-lg text-ink-3">
-        Trained on <span className="num font-semibold text-ink-2">{fmtInt(lr.round.examples)}</span> teacher examples
         {promoted ? (
           <>
-            {" · "}replaced <span className="font-mono text-ink-2">{lr.previousVersion}</span>
+            <span className="font-mono">{version}</span> is now serving
+          </>
+        ) : (
+          "Candidate blocked by the evaluation gate"
+        )}
+      </h2>
+
+      {finite(f1) ? (
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="text-lg text-ink-2">Macro-F1</span>
+          <span className="num text-4xl font-semibold text-ink">{fmtPct(f1, 1)}</span>
+          {finite(acc) ? <span className="num text-lg text-ink-2">category accuracy {fmtPct(acc, 1)}</span> : null}
+          <ProvisionalBadge />
+        </div>
+      ) : null}
+
+      {r.reason ? <p className="mt-2 text-xl text-ink">{r.reason}</p> : null}
+
+      {showShare ? (
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="text-lg text-ink-2">Handled locally</span>
+          <span className="num text-2xl font-semibold text-ink-2">{fmtPct(lr.localShareBefore, 1)}</span>
+          <span aria-hidden className="text-xl text-ink-3">
+            →
+          </span>
+          <span className="num text-3xl font-semibold text-ink">{fmtPct(lr.localShareAfter, 1)}</span>
+          <span className={cx("num text-xl font-semibold", deltaPts >= 0 ? "text-good" : "text-bad")}>
+            {fmtDelta(deltaPts)}
+          </span>
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-lg text-ink-3">
+        {finite(r.examples) && r.examples > 0 ? (
+          <>
+            Trained on <span className="num font-semibold text-ink-2">{fmtInt(r.examples)}</span> teacher examples
+          </>
+        ) : (
+          "Test-set evaluation"
+        )}
+        {promoted && previous && previous !== r.model_version ? (
+          <>
+            {" · "}replaced <span className="font-mono text-ink-2">{previous}</span>
+          </>
+        ) : null}
+        {!promoted && previous ? (
+          <>
+            {" · "}still serving <span className="font-mono text-ink-2">{previous}</span>
           </>
         ) : null}
       </p>

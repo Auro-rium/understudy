@@ -122,8 +122,8 @@ export function CostChart() {
         <LegendItem swatch={<LineSwatch color="var(--teacher)" />} label="Cloud-only cost" />
         <LegendItem swatch={<FillSwatch color="var(--good)" />} label="Saved" />
       </div>
-      {data.length < 2 || !last ? (
-        <EmptyState title="No cost data yet" hint="Costs accumulate as tickets are routed." />
+      {data.length < 2 || !last || !data.some((d) => d.cloud > 0 || d.actual > 0) ? (
+        <EmptyState title="No cost data yet" hint="Costs accumulate as live tickets are routed." />
       ) : (
         <div className="h-72 w-full sm:h-80 2xl:h-auto 2xl:min-h-48 2xl:flex-1" role="img" aria-label="Cumulative actual cost versus cloud-only cost">
           <ResponsiveContainer width="100%" height="100%">

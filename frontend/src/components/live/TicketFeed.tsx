@@ -55,7 +55,7 @@ function FeedRow({ ticket, animateIn }: { ticket: Ticket; animateIn: boolean }) 
   );
 }
 
-function FeedList({ tickets }: { tickets: Ticket[] }) {
+function FeedList({ tickets, canControl }: { tickets: Ticket[]; canControl: boolean }) {
   // Rows present on first paint never animate in; anything arriving later does.
   const [initialIds] = useState(() => new Set(tickets.map((t) => t.id)));
   return (
@@ -74,10 +74,17 @@ function FeedList({ tickets }: { tickets: Ticket[] }) {
       </div>
       {tickets.length === 0 ? (
         <div className="px-4 pb-4 pt-2">
-          <EmptyState
-            title="No tickets yet — press Start stream"
-            hint="Each ticket appears here the moment it is routed."
-          />
+          {canControl ? (
+            <EmptyState
+              title="No live traffic yet. Press Start stream."
+              hint="Each ticket appears here the moment it is routed."
+            />
+          ) : (
+            <EmptyState
+              title="No live traffic has been recorded yet"
+              hint="This is a saved snapshot, so nothing is streaming. Connect the backend, then press Start stream to watch tickets get routed here."
+            />
+          )}
         </div>
       ) : (
         <ul aria-label="Most recent tickets, newest first">
@@ -101,7 +108,7 @@ export function TicketFeed() {
         <span className="flex items-center gap-4">
           <span className="inline-flex items-center gap-2 text-base text-ink-2" aria-live="polite">
             <span aria-hidden className={cx("size-2.5 rounded-full", state.streaming ? "bg-spot" : "bg-ink-3")} />
-            {state.streaming ? "Streaming" : "Paused"}
+            {state.streaming ? "Streaming" : state.canControl ? "Paused" : "Not connected"}
           </span>
           {state.summary ? (
             <span className="num hidden text-base text-ink-3 sm:inline">{fmtInt(state.summary.total)} total</span>
@@ -110,7 +117,7 @@ export function TicketFeed() {
       </header>
       <div className="pb-2 2xl:min-h-0 2xl:flex-1 2xl:overflow-hidden 2xl:[mask-image:linear-gradient(to_bottom,black_calc(100%-3.5rem),transparent)]">
         {state.loaded ? (
-          <FeedList tickets={tickets} />
+          <FeedList tickets={tickets} canControl={state.canControl} />
         ) : (
           <div className="space-y-3 px-4 pb-4">
             {[0, 1, 2, 3, 4].map((i) => (

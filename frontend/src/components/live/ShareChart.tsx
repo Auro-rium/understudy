@@ -86,7 +86,7 @@ export function ShareChart() {
     const by = new Map<string, MarkerGroup>();
     for (const m of state.roundMarkers) {
       if (!inWindow.has(m.at)) continue;
-      const label = m.promoted ? m.version : "gate rejected";
+      const label = m.promoted ? m.version : `${m.version} rejected`;
       const g = by.get(m.at);
       if (g) {
         g.text = `${g.text} · ${label}`;
@@ -115,7 +115,10 @@ export function ShareChart() {
         Dashed lines mark training rounds.
       </p>
       {data.length < 2 ? (
-        <EmptyState title="No history yet" hint="The line draws itself once tickets start flowing." />
+        <EmptyState
+          title="No history yet"
+          hint="The line draws itself once live traffic has been recorded."
+        />
       ) : (
         <div className="h-72 w-full sm:h-80 2xl:h-auto 2xl:min-h-48 2xl:flex-1" role="img" aria-label="Line chart of local share over time">
           <ResponsiveContainer width="100%" height="100%">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useStore } from "@/lib/store";
+import { NOT_REACHABLE, useStore } from "@/lib/store";
 import { fmtInt } from "@/lib/format";
 import { AnimatedNumber, ProgressBar, cx } from "@/components/ui";
 import type { TrainStage } from "@/lib/types";
@@ -11,7 +11,7 @@ const RATES = [20, 40, 90] as const;
 
 const STAGE_LABEL: Record<TrainStage, string> = {
   collect: "Collecting teacher answers",
-  train: "Training LoRA",
+  train: "Training",
   evaluate: "Evaluating",
   promote: "Promoting",
 };
@@ -22,7 +22,7 @@ const btn =
 function Group({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={cx("flex min-w-0 flex-col gap-2", className)}>
-      <p className="text-base font-medium uppercase tracking-wider text-ink-3">{label}</p>
+      <p className="text-lg font-medium text-ink-2">{label}</p>
       {children}
     </div>
   );
@@ -40,6 +40,7 @@ export function ControlsBar() {
     setBusy(key);
     setError(null);
     try {
+      if (!state.canControl) throw new Error(NOT_REACHABLE);
       await fn();
     } catch (e) {
       setError(e instanceof Error ? e.message : "That action failed.");
@@ -52,9 +53,22 @@ export function ControlsBar() {
   const tp = state.trainProgress;
   const training = tp !== null;
   const queue = state.reviewQueue.length;
+  const locked = !state.canControl;
+  const trainError = state.trainError;
 
   return (
-    <section aria-label="Demo controls" className="rounded-xl border border-line bg-surface p-4 sm:p-5">
+    <section aria-label="Controls" className="rounded-xl border border-line bg-surface p-4 sm:p-5">
+      {locked ? (
+        <p
+          role="status"
+          className="mb-5 rounded-lg border border-spot/50 bg-spot/10 px-4 py-3 text-lg text-ink"
+        >
+          <span className="font-semibold text-spot">Controls are off.</span>{" "}
+          {state.apiConfigured
+            ? "Connect the backend to use these controls — showing a saved snapshot."
+            : "No backend is configured in this build — showing a saved snapshot. Point NEXT_PUBLIC_API_URL at the backend to use these controls."}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-start gap-x-8 gap-y-6">
         {/* stream */}
         <Group label="Ticket stream">
@@ -62,7 +76,7 @@ export function ControlsBar() {
             <button
               type="button"
               aria-pressed={state.streaming}
-              disabled={busy === "stream"}
+              disabled={locked || busy === "stream"}
               onClick={() =>
                 run("stream", () => (state.streaming ? actions.stopStream() : actions.startStream(rate)))
               }
@@ -83,12 +97,13 @@ export function ControlsBar() {
                   type="button"
                   role="radio"
                   aria-checked={rate === r}
+                  disabled={locked}
                   onClick={() => {
                     setRate(r);
                     if (state.streaming) void run("stream", () => actions.startStream(r));
                   }}
                   className={cx(
-                    "min-h-12 min-w-14 rounded-md px-3 text-lg font-semibold num transition-colors",
+                    "min-h-12 min-w-14 rounded-md px-3 text-lg font-semibold num transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                     rate === r ? "bg-surface-3 text-ink" : "text-ink-2 hover:bg-surface-2 hover:text-ink",
                   )}
                 >
@@ -105,7 +120,7 @@ export function ControlsBar() {
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
             <button
               type="button"
-              disabled={training || busy === "train"}
+              disabled={locked || training || busy === "train"}
               onClick={() => run("train", () => actions.runTrainingRound())}
               className={cx(btn, "border border-line-strong bg-surface-2 text-ink hover:bg-surface-3")}
             >
@@ -130,8 +145,10 @@ export function ControlsBar() {
                   </p>
                 </>
               ) : (
-                <p className="text-base text-ink-3">
-                  Idle. A round trains Gemma on the teacher answers collected so far.
+                <p className={cx("text-base", trainError ? "text-bad" : "text-ink-3")} role={trainError ? "alert" : undefined}>
+                  {trainError
+                    ? `Last round failed: ${trainError}`
+                    : "Idle. A round fine-tunes the local model on teacher-labelled examples."}
                 </p>
               )}
             </div>
@@ -145,7 +162,7 @@ export function ControlsBar() {
             type="button"
             role="switch"
             aria-checked={offline}
-            disabled={busy === "offline"}
+            disabled={locked || busy === "offline"}
             onClick={() => run("offline", () => actions.setOffline(!offline))}
             className={cx(
               btn,
@@ -172,7 +189,7 @@ export function ControlsBar() {
             </span>
           </button>
           <p className={cx("max-w-[11rem] text-base leading-snug", offline ? "text-spot" : "text-ink-3")}>
-            {offline ? "Unsure tickets go to review" : "Teacher available"}
+            {locked ? "Not connected" : offline ? "Unsure tickets go to review" : "Teacher available"}
           </p>
           </div>
         </Group>
