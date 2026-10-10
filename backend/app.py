@@ -21,7 +21,7 @@ from backend.router import ModeState, Router
 from backend.schemas import (CATEGORIES, TEAMS, ClassifyRequest, ClassifyResult, Health, MetricsSummary,
                              OfflineRequest, ReviewItem, RoundOut, StreamStart, TicketOut, TimePoint,
                              TrainRequest)
-from backend import demo_api, teacher_iface
+from backend import demo_api, teacher_iface, telemetry
 from backend.demo_api import require_key
 from common.teacher import load_env
 
@@ -31,12 +31,20 @@ class AppContext:
 
     def __init__(self, db: DB, holder: ModelHolder, teacher, events: Broadcaster):
         self.db, self.holder, self.teacher, self.events = db, holder, teacher, events
-        self.mode = ModeState(on_change=lambda m: events.publish("mode", {"mode": m}))
+        self.telemetry = telemetry.Telemetry()
+        events.on_publish = self.telemetry.count_event
+        self.mode = ModeState(on_change=self._mode_changed)
         self.router = Router(db, holder, teacher, self.mode,
                              on_prediction=lambda d: events.publish("prediction", _ticket_out(d)))
+        self.router.telemetry = self.telemetry
         self.stream_task: Optional[asyncio.Task] = None
         self.stream_rate: Optional[float] = None
         self.jobs: dict = {}
+
+    def _mode_changed(self, m: str):
+        self.telemetry.log("warning" if m == "offline" else "info", "mode", f"mode -> {m}",
+                           forced=self.mode.forced, detected=self.mode.detected)
+        self.events.publish("mode", {"mode": m})
 
 
 def _ticket_out(d: dict) -> dict:
@@ -88,6 +96,10 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
     @asynccontextmanager
     async def lifespan(app):
         events.bind_loop(asyncio.get_running_loop())
+        ctx.telemetry.log("info", "startup", "backend ready", model=ctx.holder.version,
+                          classifier=type(ctx.holder._clf).__name__, teacher=type(teacher).__name__ if teacher else None,
+                          db=getattr(db, "path", None), threshold=round(ctx.router.threshold(), 4),
+                          auth="on" if demo_api.demo_key() else "OFF")
         task = asyncio.create_task(probe_loop())
         yield
         task.cancel()
@@ -96,6 +108,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
 
     app = FastAPI(title="Understudy", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(telemetry.RequestTelemetry, tele=ctx.telemetry)
     app.state.ctx = ctx
     from backend.round_backend import set_current_ctx
     set_current_ctx(ctx)
@@ -165,6 +178,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
 
         def on_event(e: dict):  # called from the training thread
             t = e.get("type")
+            _log_round_event(e, job_id)
             if t == "round_complete":
                 ctx.jobs[job_id] = "done"
                 events.publish("round_complete", {"job_id": job_id, **e, "previous_model_version": previous})
@@ -177,7 +191,10 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
         try:
             run_round_async(AppRoundBackend(ctx), on_event=on_event, trainer_name=req.backend)
         except RuntimeError as e:  # a round is already running
+            ctx.jobs.pop(job_id, None)
             raise HTTPException(409, str(e))
+        ctx.telemetry.log("info", "train", "training round requested", job_id=job_id, from_model=previous,
+                          trainer=req.backend)
         return {"job_id": job_id}
 
     # ------------------------------------------------------------ stream
@@ -186,6 +203,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
 
     async def stream_loop(path: str, rate: float):
         gap = 60.0 / rate
+        n = 0
         with open(path) as f:
             for line in f:
                 line = line.strip()
@@ -197,7 +215,9 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
                 except Exception:
                     text = line
                 await asyncio.to_thread(ctx.router.classify, text)
+                n += 1
                 await asyncio.sleep(gap)
+        ctx.telemetry.log("info", "stream", "demo stream finished (end of file)", tickets=n)
         ctx.stream_task = None
 
     @app.post("/api/stream/start", dependencies=[Depends(require_key)])
@@ -211,6 +231,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
             ctx.stream_task.cancel()
         ctx.stream_rate = req.rate_per_min
         ctx.stream_task = asyncio.create_task(stream_loop(path, req.rate_per_min))
+        ctx.telemetry.log("info", "stream", "demo stream started", rate_per_min=req.rate_per_min, file=path)
         return {"running": True, "rate_per_min": req.rate_per_min}
 
     @app.post("/api/stream/stop", dependencies=[Depends(require_key)])
@@ -219,6 +240,7 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
         if was:
             ctx.stream_task.cancel()
         ctx.stream_task = None
+        ctx.telemetry.log("info", "stream", "demo stream stopped" if was else "stop requested (no stream running)")
         return {"running": False, "was_running": was}
 
     # ------------------------------------------------------------ mode + events
@@ -242,6 +264,26 @@ def create_app(db: Optional[DB] = None, classifier: Optional[BaseClassifier] = N
         return EventSourceResponse(gen(), ping=15)
 
     demo_api.install(app, ctx, events)
+    telemetry.install(app, ctx)
+
+    def _log_round_event(e: dict, job_id: str):
+        t, rnd, tele = e.get("type"), e.get("round"), ctx.telemetry
+        if t == "round_start":
+            tele.log("info", "train", f"round {rnd}: collecting", job_id=job_id, examples=e.get("examples"))
+        elif t == "train_progress":
+            if e.get("kind") == "val":
+                tele.log("info", "train", f"round {rnd}: val step {e.get('step')}/{e.get('total_steps')}",
+                         job_id=job_id, loss=e.get("loss"))
+            else:
+                tele.record("debug", "train", f"round {rnd}: train step {e.get('step')}/{e.get('total_steps')}",
+                            job_id=job_id, loss=e.get("loss"))
+        elif t == "round_complete":
+            tele.log("info", "train", f"round {rnd}: complete", job_id=job_id, promoted=e.get("promoted"),
+                     model=e.get("model_version"), f1=(e.get("eval") or {}).get("category_macro_f1"))
+        elif t == "round_failed":
+            tele.log("error", "train", f"round {rnd}: failed", job_id=job_id, error=str(e.get("error"))[:300])
+        else:
+            tele.log("info", "train", f"round {rnd}: {t}", job_id=job_id)
     return app
 
 

@@ -100,6 +100,7 @@ class Router:
         self.db, self.holder, self.teacher = db, holder, teacher
         self.mode = mode or ModeState()
         self.on_prediction = on_prediction
+        self.telemetry = None  # backend.telemetry.Telemetry, set by the app
 
     # ---- threshold
     def threshold(self, version: Optional[str] = None) -> float:
@@ -137,12 +138,15 @@ class Router:
         letter, prio, conf = out.letter, out.priority, out.confidence
         source, cost = "local", 0.0
         teacher_rec = None
+        tele = self.telemetry
+        stages = dict(out.timings or {})
         offline = self.mode.mode == "offline" if force_offline is None else force_offline
 
         if conf < thr:
             if offline or self.teacher is None:
                 source = "review"
             else:
+                tt = time.perf_counter()
                 try:
                     res = self.teacher.complete(TEACHER_SYSTEM, text, json_mode=True)
                     tl, tp = parse_teacher_answer(res.text)
@@ -150,15 +154,24 @@ class Router:
                     cost = res.tokens_in * pin / 1e6 + res.tokens_out * pout / 1e6
                     letter, prio, source = tl, tp, "teacher"
                     teacher_rec = res
+                    stages["teacher"] = (time.perf_counter() - tt) * 1000
+                    if tele:
+                        tele.observe_teacher("ok", stages["teacher"], res.tokens_in, res.tokens_out, cost)
                     if self.mode.detected:
                         self.mode.set_detected(False)
-                except NETWORK_ERRORS:
+                except NETWORK_ERRORS as e:
+                    if tele:
+                        tele.observe_teacher("error", (time.perf_counter() - tt) * 1000,
+                                             error=f"{type(e).__name__}: {str(e)[:160]}")
                     self.mode.set_detected(True)
                     source = "review"
-                except ValueError:  # teacher answered but unparseable: do not train on it
+                except ValueError as e:  # teacher answered but unparseable: do not train on it
+                    if tele:
+                        tele.observe_teacher("unparseable", (time.perf_counter() - tt) * 1000, error=str(e)[:160])
                     source = "review"
 
         latency_ms = (time.perf_counter() - t0) * 1000
+        td = time.perf_counter()
         tid = self.db.insert_ticket(text=text, category=letter, priority=prio, source=source,
                                     confidence=conf, latency_ms=latency_ms, cost_usd=cost,
                                     model_version=version)
@@ -173,6 +186,13 @@ class Router:
         result = {"id": tid, "category": letter, "category_name": CATEGORIES[letter], "priority": prio,
                   "team": TEAMS[letter], "source": source, "confidence": conf,
                   "latency_ms": latency_ms, "cost_usd": cost, "model_version": version}
+        if tele:
+            stages["db_write"] = (time.perf_counter() - td) * 1000
+            stages["classify_total"] = (time.perf_counter() - t0) * 1000
+            try:
+                tele.observe_classify(result, thr, stages, text)
+            except Exception:  # noqa: BLE001 - telemetry must never fail a ticket
+                pass
         if self.on_prediction:
             try:
                 self.on_prediction({**result, "text": text})

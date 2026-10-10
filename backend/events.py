@@ -12,6 +12,7 @@ class Broadcaster:
         self._subs: set = set()
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self.on_publish = None  # telemetry hook: fn(event_type)
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -36,6 +37,8 @@ class Broadcaster:
         if type_ not in EVENT_TYPES:
             raise ValueError(f"bad event type {type_}")
         msg = {"event": type_, "data": json.dumps(data)}
+        if self.on_publish:
+            self.on_publish(type_)
         with self._lock:
             subs = list(self._subs)
         try:

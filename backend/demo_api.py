@@ -113,6 +113,7 @@ def install(app, ctx, events):
             except HTTPException:
                 raise
             except Exception as e:  # noqa: BLE001
+                ctx.telemetry.log("error", "model", f"could not load {version}", error=str(e)[:300])
                 raise HTTPException(500, f"could not load {version}: {e}")
             del clf
             gc.collect()
@@ -122,6 +123,8 @@ def install(app, ctx, events):
             except Exception:
                 pass
             events.publish("model", {"model_version": version, "previous_model_version": prev})
+            ctx.telemetry.log("info", "model", f"live model {prev} -> {version}", load_s=round(time.time() - t0, 2),
+                              threshold=round(ctx.router.threshold(), 4))
             return {"model_version": version, "previous_model_version": prev, "changed": True,
                     "load_s": round(time.time() - t0, 2)}
 
@@ -156,11 +159,15 @@ def install(app, ctx, events):
             if version != ctx.holder.version:  # the version is process-wide: this also changes live triage
                 activate(version)
             msgs = [{"role": m.get("role", "user"), "content": _flatten(m.get("content"))} for m in req.messages]
+            t0 = time.perf_counter()
             (text, n_in, n_out), served = ctx.holder.use(
                 lambda clf: clf.chat(msgs, req.max_tokens or 512, req.temperature if req.temperature is not None else 0.0))
+            ctx.telemetry.log("info", "chat", f"/v1 chat on {served}", ms=round((time.perf_counter() - t0) * 1000, 1),
+                              tokens_in=n_in, tokens_out=n_out, stream=req.stream)
         except HTTPException as e:
             return err(e.status_code, str(e.detail))
         except Exception as e:  # noqa: BLE001
+            ctx.telemetry.log("error", "chat", "generation failed", error=str(e)[:300])
             return err(500, f"generation failed: {e}", "server_error")
         cid, created, mname = f"chatcmpl-{uuid.uuid4().hex[:20]}", int(time.time()), MODEL_PREFIX + served
         usage = {"prompt_tokens": n_in, "completion_tokens": n_out, "total_tokens": n_in + n_out}

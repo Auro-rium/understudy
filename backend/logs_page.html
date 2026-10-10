@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Understudy Backend Logs</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6eb; --text: #1b1f24; --muted: #6a7380;
+    --accent: #2f6fde; --ok: #1f8a4c; --warn: #b7791f; --err: #c53030; --teacher: #d9730d; --review: #8a4fd0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e6e9ee; --muted: #8b95a3;
+      --accent: #6ea2ff; --ok: #4cc38a; --warn: #f0b44c; --err: #ff6b6b; --teacher: #ff9f4a; --review: #b58cff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 14px 16px;
+           border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .chip { font: 12px var(--mono); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .chip b { color: var(--text); font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); margin-right: 6px; }
+  .dot.live { background: var(--ok); } .dot.dead { background: var(--err); }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 1400px; margin: 0 auto; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .tile .k { color: var(--muted); font-size: 12px; }
+  .tile .v { font: 600 20px var(--mono); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .s { color: var(--muted); font: 12px var(--mono); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+  section h2 { font-size: 13px; margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); font-weight: 650; display: flex; gap: 8px; align-items: center; }
+  section h2 .note { color: var(--muted); font-weight: 400; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+  th, td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .bar { height: 6px; background: var(--accent); border-radius: 3px; opacity: .75; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  select, input[type=search], button { font: 12px var(--mono); background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  input[type=search] { min-width: 0; flex: 1 1 160px; }
+  button { cursor: pointer; } button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .kinds { display: flex; flex-wrap: wrap; gap: 4px; }
+  .kinds button { padding: 2px 7px; }
+  #log { font: 12px/1.5 var(--mono); height: 60vh; overflow-y: auto; padding: 6px 0; }
+  .row { display: grid; grid-template-columns: 92px 64px 72px 1fr; gap: 8px; padding: 1px 12px; }
+  .row:hover { background: var(--bg); }
+  .row .t { color: var(--muted); } .row .kd { color: var(--accent); }
+  .row .m { word-break: break-word; white-space: pre-wrap; }
+  .row .f { color: var(--muted); }
+  .row .q { color: var(--muted); font-style: italic; }
+  .lv-debug .lv { color: var(--muted); } .lv-info .lv { color: var(--ok); }
+  .lv-warning .lv { color: var(--warn); } .lv-error .lv { color: var(--err); } .lv-error { background: color-mix(in srgb, var(--err) 8%, transparent); }
+  .src-teacher { color: var(--teacher); font-weight: 600; } .src-review { color: var(--review); font-weight: 600; } .src-local { color: var(--ok); font-weight: 600; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; gap: 0; padding: 3px 12px; border-bottom: 1px solid var(--line); } .row .lv, .row .kd { display: none; } }
+  .empty { color: var(--muted); padding: 16px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Understudy · backend logs</h1>
+  <span class="chip"><span id="conn" class="dot"></span><span id="connText">connecting…</span></span>
+  <span class="chip">model <b id="hModel">–</b></span>
+  <span class="chip">mode <b id="hMode">–</b></span>
+  <span class="chip">threshold <b id="hThr">–</b></span>
+  <span class="chip">stream <b id="hStream">–</b></span>
+  <span class="chip">training <b id="hTrain">–</b></span>
+  <span class="chip">uptime <b id="hUp">–</b></span>
+</header>
+<main>
+  <div class="tiles" id="tiles"></div>
+  <div class="grid2">
+    <section>
+      <h2>Classify stage timings <span class="note">last 500 tickets</span></h2>
+      <div class="scroll"><table id="stages"></table></div>
+    </section>
+    <section>
+      <h2>HTTP routes <span class="note">by request count</span></h2>
+      <div class="scroll"><table id="routes"></table></div>
+    </section>
+  </div>
+  <section>
+    <h2>Log tail <span class="note" id="logNote"></span></h2>
+    <div class="controls">
+      <select id="level" aria-label="minimum level">
+        <option value="debug">debug+</option><option value="info" selected>info+</option>
+        <option value="warning">warning+</option><option value="error">error</option>
+      </select>
+      <input type="search" id="q" placeholder="filter text…" aria-label="filter text">
+      <button id="pause">pause</button>
+      <button id="follow" class="on">follow</button>
+      <button id="clear">clear view</button>
+      <div class="kinds" id="kinds"></div>
+    </div>
+    <div id="log"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const LV = { debug: 10, info: 20, warning: 30, error: 40 };
+let records = [], lastSeq = 0, clearedAt = 0, paused = false, follow = true;
+const hiddenKinds = new Set(), seenKinds = new Set();
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ms = (v) => v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(2) + " s" : v.toFixed(0) + " ms";
+const usd = (v) => "$" + (v || 0).toFixed(v >= 0.01 ? 4 : 6);
+const dur = (s) => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`; };
+
+function tile(k, v, s) { return `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div><div class="s">${s || "&nbsp;"}</div></div>`; }
+
+function renderTelemetry(t) {
+  $("hModel").textContent = t.model_version;
+  $("hMode").textContent = t.mode + (t.mode_forced ? " (forced)" : t.mode_detected ? " (teacher down)" : "");
+  $("hMode").style.color = t.mode === "offline" ? "var(--warn)" : "";
+  $("hThr").textContent = t.threshold;
+  $("hStream").textContent = t.stream.running ? `on · ${t.stream.rate_per_min}/min` : "off";
+  $("hTrain").textContent = t.training_running ? "running" : "idle";
+  $("hUp").textContent = dur(t.uptime_s);
+  const c = t.classify, src = c.by_source, tot = c.stages.classify_total, te = t.teacher, m = t.memory;
+  const pct = (n) => c.count ? ` (${(100 * (n || 0) / c.count).toFixed(1)}%)` : "";
+  $("tiles").innerHTML = [
+    tile("Tickets classified", c.count, `${c.per_min}/min last 60 s`),
+    tile("Local", `<span class="src-local">${src.local || 0}</span>`, "kept on device" + pct(src.local)),
+    tile("Teacher", `<span class="src-teacher">${src.teacher || 0}</span>`, "escalated to cloud" + pct(src.teacher)),
+    tile("Review", `<span class="src-review">${src.review || 0}</span>`, "queued for a human" + pct(src.review)),
+    tile("Classify latency p50", ms(tot.p50_ms), `p95 ${ms(tot.p95_ms)} · max ${ms(tot.max_ms)}`),
+    tile("Teacher spend", usd(te.cost_usd), `${te.calls} calls · ${te.errors} err · p50 ${ms(te.p50_ms)}`),
+    tile("Teacher tokens", `${te.tokens_in + te.tokens_out}`, `${te.tokens_in} in · ${te.tokens_out} out`),
+    tile("HTTP requests", t.requests.total, `${t.requests.per_min}/min · ${t.requests.errors_5xx} 5xx · ${t.requests.auth_rejected} 401`),
+    tile("SSE clients", t.sse_clients, Object.entries(t.events).map(([k, v]) => `${k} ${v}`).join(" · ") || "no events yet"),
+    tile("Process memory", m.rss_mb != null ? `${(m.rss_mb / 1024).toFixed(2)} GB` : "–", `peak ${(m.peak_rss_mb / 1024).toFixed(2)} GB`),
+    tile("MLX memory", m.mlx_active_mb != null ? `${(m.mlx_active_mb / 1024).toFixed(2)} GB` : "–",
+         m.mlx_peak_mb != null ? `peak ${(m.mlx_peak_mb / 1024).toFixed(2)} GB · cache ${(m.mlx_cache_mb / 1024).toFixed(2)} GB` : "MLX not loaded"),
+    tile("Log buffer", t.logs.buffered, `seq ${t.logs.last_seq} · pid ${t.pid}`),
+  ].join("");
+
+  const names = { classify_total: "total (end to end)", model_forward: "model forward → confidence",
+                  model_generate: "generate → priority", teacher: "cloud teacher call", db_write: "db write + events" };
+  const maxP = Math.max(1, ...Object.values(c.stages).map((s) => s.p50_ms || 0));
+  $("stages").innerHTML = `<tr><th>stage</th><th>n</th><th>mean</th><th>p50</th><th>p95</th><th>max</th><th style="width:22%"></th></tr>` +
+    Object.entries(c.stages).map(([k, s]) => `<tr><td>${esc(names[k] || k)}</td><td>${s.count}</td><td>${ms(s.mean_ms)}</td><td>${ms(s.p50_ms)}</td><td>${ms(s.p95_ms)}</td><td>${ms(s.max_ms)}</td>
+      <td><div class="bar" style="width:${(100 * (s.p50_ms || 0) / maxP).toFixed(1)}%"></div></td></tr>`).join("");
+  $("routes").innerHTML = `<tr><th>route</th><th>n</th><th>p50</th><th>p95</th><th>status</th></tr>` +
+    (t.requests.routes.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.count}</td><td>${ms(r.p50_ms)}</td><td>${ms(r.p95_ms)}</td>
+      <td>${Object.entries(r.status).map(([k, v]) => `<span style="color:${k >= 500 ? "var(--err)" : k >= 400 ? "var(--warn)" : "inherit"}">${k}×${v}</span>`).join(" ")}</td></tr>`).join("")
+     || `<tr><td class="empty" colspan="5">no requests yet</td></tr>`);
+}
+
+function localTime(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? iso.slice(11, 23) : d.toLocaleTimeString([], { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+}
+
+function rowHtml(r) {
+  const f = r.fields || {};
+  let msg = esc(r.msg);
+  if (r.kind === "classify") msg = msg.replace(/-&gt; (local|teacher|review)$/, (_, s) => `-&gt; <span class="src-${s}">${s}</span>`);
+  const fields = Object.entries(f).filter(([k]) => k !== "text").map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ");
+  const text = f.text ? `  <span class="q">“${esc(f.text)}”</span>` : "";
+  return `<div class="row lv-${r.level}" title="${esc(JSON.stringify(r))}"><span class="t">${localTime(r.ts)}</span><span class="lv">${r.level}</span>` +
+         `<span class="kd">${esc(r.kind)}</span><span class="m">${msg}${fields ? `  <span class="f">${fields}</span>` : ""}${text}</span></div>`;
+}
+
+function visible(r) {
+  if (r.seq <= clearedAt || LV[r.level] < LV[$("level").value] || hiddenKinds.has(r.kind)) return false;
+  const q = $("q").value.trim().toLowerCase();
+  return !q || JSON.stringify(r).toLowerCase().includes(q);
+}
+
+function renderKinds() {
+  $("kinds").innerHTML = [...seenKinds].sort().map((k) => `<button data-k="${esc(k)}" class="${hiddenKinds.has(k) ? "" : "on"}">${esc(k)}</button>`).join("");
+}
+
+function renderLog() {
+  const rows = records.filter(visible).slice(-1500);
+  $("log").innerHTML = rows.length ? rows.map(rowHtml).join("") : `<div class="empty">No log lines match. Lower the level or clear the filter.</div>`;
+  $("logNote").textContent = `${rows.length} shown · ${records.length} buffered here`;
+  if (follow) $("log").scrollTop = $("log").scrollHeight;
+}
+
+async function pollLogs() {
+  if (paused) return;
+  const res = await fetch(`/api/logs?after=${lastSeq}&limit=3000&level=debug`, { cache: "no-store" });
+  if (!res.ok) throw new Error(res.status);
+  const d = await res.json();
+  if (d.last_seq < lastSeq) { records = []; clearedAt = 0; }  // backend restarted: sequence reset
+  if (d.records.length) {
+    records.push(...d.records);
+    if (records.length > 5000) records = records.slice(-5000);
+    let newKind = false;
+    for (const r of d.records) if (!seenKinds.has(r.kind)) { seenKinds.add(r.kind); newKind = true; }
+    if (newKind) renderKinds();
+    renderLog();
+  }
+  lastSeq = d.last_seq;
+}
+
+async function pollTelemetry() {
+  const res = await fetch("/api/telemetry", { cache: "no-store" });
+  if (!res.ok) throw new Error(res.status);
+  renderTelemetry(await res.json());
+}
+
+function setConn(ok, msg) {
+  $("conn").className = "dot " + (ok ? "live" : "dead");
+  $("connText").textContent = msg;
+}
+
+async function tick() {
+  try { await Promise.all([pollLogs(), pollTelemetry()]); setConn(true, paused ? "paused" : "live · 1.5 s"); }
+  catch (e) { setConn(false, "backend unreachable"); }
+  setTimeout(tick, 1500);
+}
+
+$("level").onchange = renderLog;
+$("q").oninput = renderLog;
+$("pause").onclick = (e) => { paused = !paused; e.target.classList.toggle("on", paused); e.target.textContent = paused ? "resume" : "pause"; };
+$("follow").onclick = (e) => { follow = !follow; e.target.classList.toggle("on", follow); if (follow) renderLog(); };
+$("clear").onclick = () => { clearedAt = lastSeq; renderLog(); };
+$("kinds").onclick = (e) => { const k = e.target.dataset && e.target.dataset.k; if (!k) return; hiddenKinds.has(k) ? hiddenKinds.delete(k) : hiddenKinds.add(k); renderKinds(); renderLog(); };
+$("log").onscroll = () => { const el = $("log"); const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  if (follow !== atBottom) { follow = atBottom; $("follow").classList.toggle("on", follow); } };
+tick();
+</script>
+</body>
+</html>

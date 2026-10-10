@@ -27,6 +27,7 @@ class ClassifierOutput:
     letter: str
     priority: str
     confidence: float  # softmax prob of chosen letter over A-H
+    timings: Optional[dict] = None  # stage -> ms (model_forward, model_generate), for telemetry
 
 
 def softmax_over_letters(scores: dict) -> dict:
@@ -175,16 +176,20 @@ class MlxInProcessClassifier(BaseClassifier):
     def _classify(self, text: str) -> ClassifierOutput:
         import mlx.core as mx  # lazy
         from mlx_lm import generate
+        t0 = time.perf_counter()
         prompt = self._prompt(text)
         toks = self.tokenizer.encode(prompt, add_special_tokens=False)
         logits = self.model(mx.array(toks)[None])[:, -1, :][0].astype(mx.float32)
-        scores = {L: max(float(logits[i]) for i in ids) for L, ids in self._ids().items()}
+        scores = {L: max(float(logits[i]) for i in ids) for L, ids in self._ids().items()}  # float() syncs
         probs = softmax_over_letters(scores)
         letter = max(probs, key=probs.get)
+        t1 = time.perf_counter()
         out = generate(self.model, self.tokenizer, prompt=prompt, max_tokens=20)  # greedy (temp 0)
         _, prio = parse_answer(out)
+        t2 = time.perf_counter()
         # P3 only when the model emitted no parsable priority
-        return ClassifierOutput(letter, prio or "P3", probs[letter])
+        return ClassifierOutput(letter, prio or "P3", probs[letter],
+                                {"model_forward": (t1 - t0) * 1000, "model_generate": (t2 - t1) * 1000})
 
     def unload(self):
         """Free model memory (used while training runs)."""
@@ -243,9 +248,12 @@ class ServerClassifier(BaseClassifier):
                 "top_logprobs": 20, "chat_template_kwargs": {"enable_thinking": False},
                 "messages": [{"role": "system", "content": CLASSIFIER_SYSTEM},
                              {"role": "user", "content": text}]}
+        t0 = time.perf_counter()
         r = self.client.post(f"{self.base_url}/chat/completions", json=body)
         r.raise_for_status()
-        return self.parse_response(r.json())
+        out = self.parse_response(r.json())
+        out.timings = {"model_forward": (time.perf_counter() - t0) * 1000}
+        return out
 
     @staticmethod
     def parse_response(d: dict) -> ClassifierOutput:
