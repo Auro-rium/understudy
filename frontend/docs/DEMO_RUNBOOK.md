@@ -1,56 +1,91 @@
 # Demo runbook
 
-One page for the presenter. Read the numbers off the screen; do not quote figures that are not on it.
+One page for the presenter. Read the numbers off the screen; do not quote figures that are not on it. Everything on screen is real exported backend data or live backend data, never invented.
+
+## What is true today (real data)
+
+- Macro-F1 on the test set: base **0.761**, round 1 **0.695** (rejected by the promotion gate), round 2 **0.789** (promoted), round 3 **0.919** (promoted). Accuracy: 0.755, 0.730, 0.785, 0.920.
+- Rounds were trained locally on an Apple M5 16GB Mac, at a cost of **$0**.
+- The evaluation is **provisional**: the test labels are teacher-derived and not yet verified by people.
+- The bundled snapshot has **no live traffic**. Share handled locally, cloud cost and cost avoided are empty until the backend has handled tickets. Do not present them as results before that.
+
+If the numbers on screen differ from these after a snapshot sync or a new round, trust the screen.
+
+## Two modes
+
+| Mode | When | What you can show |
+| --- | --- | --- |
+| **Snapshot** (default if the backend is down) | No backend needed; SNAPSHOT badge in the header | `/` ladder and headline numbers, `/training` rounds and loss curves, `/results` comparison. Not available: start stream, run round, force offline. |
+| **Live** | Backend up on :8000, no SNAPSHOT badge | Everything above plus `/live` stream, running a training round, force offline and the review queue. |
 
 ## Pre-flight (10 minutes before)
 
-- [ ] Backend up on :8000: `curl http://127.0.0.1:8000/api/health` returns a model version and `online`.
-- [ ] `start.sh` stack up: mlx server on :8080, Open WebUI on :3000 (leave it alone).
-- [ ] Frontend built for the **real backend**: `NEXT_PUBLIC_DATA_SOURCE=api` in `.env.local`, then `npm run build && npm start -- -p 3001`.
-- [ ] Open http://localhost:3001. **No "SNAPSHOT" badge** in the header (it means the backend is not reachable and saved data is on screen).
-- [ ] No banner under the header. If you see "updating every 2 seconds" or "Snapshot from ...", fix that first (see Recovery).
-- [ ] Load every page once while online (`/`, `/live`, `/training`, `/results`) so the snapshot cache is filled.
-- [ ] Browser: full screen, zoom so the numbers are readable from the back, notifications off, one tab for the app, one for Open WebUI.
-- [ ] Mode shows **Online**. Stream is **stopped**. Review queue is understood (empty or not, know which).
-- [ ] If showing the Vercel link as a backup: open it, confirm it loads, note that it needs the tunnel to be up.
+- [ ] Refresh the bundled data: `npm run sync:snapshot` (or `bash scripts/sync-snapshot.sh http://127.0.0.1:8000` with the backend up), then `npm run build && npm start -- -p 3001`. Rebuild after any env change.
+- [ ] Open http://localhost:3001. Decide the mode: **SNAPSHOT badge visible** means snapshot mode; **no badge** means live.
+- [ ] Landing page shows the ladder (base, round 1 to 3) with a **Provisional** badge, and "2 of 3 rounds promoted". If it shows an empty state, the snapshot file is missing; fix before going on.
+- [ ] Live mode only: `curl http://127.0.0.1:8000/api/health` returns a model version and `online`; no banner under the header ("updating every 2 seconds" or "saved snapshot" means something is wrong, see Recovery). Stream is **stopped**.
+- [ ] Open WebUI (:3000) and mlx server (:8080) come from the repo's `start.sh`; leave them alone.
+- [ ] Load every page once (`/`, `/live`, `/training`, `/results`).
+- [ ] Browser: full screen, zoom so numbers read from the back, notifications off, one tab for the app, one for Open WebUI.
+- [ ] Vercel backup (https://understudy-lake.vercel.app): open it and confirm it loads. Without a tunnel it is snapshot-only by design.
 - [ ] Charger plugged in. Wi-Fi switch within reach.
 
-## The 3-minute script
+## Script A: snapshot mode (no live traffic), 3 minutes
 
 | Time | Screen | Do | Say |
 | --- | --- | --- | --- |
-| 0:00 | `/` | Point at the headline and the three numbers. | "Gig workers write to support in plain English. Sending every ticket to a big cloud model costs money and needs internet. Our small model runs here on this laptop and asks the cloud teacher only when it is unsure. These three numbers are the whole story: how much we handle locally, what we paid the cloud, what we avoided." |
-| 0:30 | `/live` | Press **start stream**. | "Tickets are arriving now. Each one gets a category, a priority and a team. The colour tells you who answered: blue is the local model, orange is the teacher." |
-| 1:00 | `/live` | Watch the counters and the feed; point at one orange ticket. | "Here the local model was not sure, so it asked the teacher. That answer is now a training example." |
-| 1:20 | `/training` | Press **run training round**. Let the stages advance. | "Those teacher answers become a LoRA training round on this machine. It collects, trains, evaluates, and only promotes the new version if it passes the check." |
-| 1:50 | `/live` | Back to the feed after promotion; point at the version chip and the local share. | "New version is serving. Watch the share handled locally: the model needs the teacher less." |
-| 2:10 | `/live` | Turn **Wi-Fi off** (see below), then toggle **force offline**. | "Wi-Fi is off. Nothing here needs the internet. When the model is unsure there is no teacher to ask, so those tickets go to a human review queue instead of getting a guess." |
-| 2:30 | `/live` | Show the review queue filling. | "A person picks these up. Nothing is silently wrong." |
-| 2:45 | `/results` | Show the comparison, mention if it is marked provisional. | "Base model, trained model and teacher side by side on accuracy, speed and cost. The evaluation set is small, so we label it provisional." |
+| 0:00 | `/` | Point at the headline, then the ladder. | "Gig workers write to support in plain English. A small model on this laptop routes each ticket and asks a bigger cloud teacher only when it is unsure. The bars are how well it sorts tickets into the right category, on a held-out test set, round after round." |
+| 0:40 | `/` | Point at the base bar, the hatched round 1 bar, then round 3. | "The base model scores 0.761. Round 1 got worse, 0.695, so the promotion gate rejected it and it never served a ticket. Round 2 improved to 0.789 and round 3 to 0.919. Every round was trained on this Mac, for zero dollars." |
+| 1:10 | `/` | Point at the Provisional badge. | "One honest caveat: this evaluation is provisional. The test labels came from the teacher and have not been checked by people yet. So read 0.919 as a promising first result, not a final one." |
+| 1:30 | `/` | Point at the "No live tickets recorded yet" note. | "We are not showing a share handled locally or cloud savings, because this data has no live traffic in it. Those counters fill in when tickets actually flow." |
+| 1:50 | `/training` | Scroll the round cards. | "Each round trains a small LoRA adapter on teacher answers, tests it, and only promotes it if it beats the current model. Here is the loss curve and the reason for each decision." |
+| 2:30 | `/results` | Show the comparison and per-category scores. | "Per category: where the model is strong and where it still confuses categories. This is where the next round should aim." |
 | 3:00 | `/` | Credit. | "Team e/acc. Thank you." |
+
+## Script B: live mode (backend up), 3 minutes
+
+Same opening as Script A (0:00 to 1:10), then:
+
+| Time | Screen | Do | Say |
+| --- | --- | --- | --- |
+| 1:10 | `/live` | Press **start stream**. | "Tickets are arriving now. Each gets a category, priority and team. Colour tells you who answered: blue is the local model, orange is the teacher." |
+| 1:40 | `/live` | Point at one orange ticket and the counters. | "Here the model was not sure, so it asked the teacher. That answer becomes a training example." |
+| 2:00 | `/training` | **Run training round** (only if the backend run is short enough; a full round can take many minutes, round 3 took about 33). Otherwise show the finished rounds. | "A round collects examples, trains, evaluates, and only then promotes." |
+| 2:20 | `/live` | Turn **Wi-Fi off**, toggle **force offline**. | See below. |
+| 2:45 | `/results` | Comparison; mention Provisional. | "Provisional, as I said: teacher-derived labels." |
+
+Quote live numbers (share handled locally, cloud cost, cost avoided) only if they are on screen and `summary.total` is above zero.
 
 ## The Wi-Fi-off moment
 
 1. Say what you are about to do before you do it.
 2. Turn Wi-Fi off from the menu bar and let the audience see the icon.
-3. Toggle **force offline** on `/live` (this is the backend's offline mode, which disables the teacher).
-4. The app should keep running: the page, the API and SSE are all on this machine. An amber banner ("Offline mode: uncertain tickets go to the human review queue") appears under the header and the badge flips to **Offline**; that is the backend's offline mode, not a connection error. A grey polling banner would be the only connection warning to expect.
-5. When done, turn force offline off and Wi-Fi back on.
+3. **Snapshot mode:** reload nothing; click between `/`, `/training`, `/results`. Everything is served by `npm start` on this machine, which is the point: "this is all running here, nothing is fetched from the internet."
+4. **Live mode:** toggle **force offline** on `/live`. This is the backend's offline mode, which disables the teacher: "When the model is unsure there is no teacher to ask, so those tickets go to a human review queue instead of getting a guess." An amber banner and the **Offline** badge appear; that is the mode, not a connection error. Show the review queue filling.
+5. Turn force offline off and Wi-Fi back on when done.
 
-Open WebUI (:3000) also keeps working offline; use it for the base vs trained side-by-side only if the backend serves both models there (see README).
+This only works on the local build (`localhost:3001` against `127.0.0.1:8000`), not on Vercel.
+
+## Going live when the backend comes up
+
+1. Start the backend on :8000 and check `curl http://127.0.0.1:8000/api/health`.
+2. The page retries every 5 seconds by itself; within a few seconds the SNAPSHOT badge disappears. No reload is needed.
+3. For the public Vercel link: start `cloudflared tunnel --url http://127.0.0.1:8000`, set `NEXT_PUBLIC_API_URL` to the printed URL and `NEXT_PUBLIC_DATA_SOURCE=api` in Vercel, make sure backend CORS allows the Vercel origin, and redeploy (see README). Until that is done the Vercel page is snapshot-only.
+4. Say plainly which mode you are in. If the SNAPSHOT badge is on screen, you are showing saved results.
 
 ## Recovery
 
 | What happened | Do this |
 | --- | --- |
-| Page will not load | Check `npm start -- -p 3001` is still running in its terminal. Restart it. |
-| "Can't reach the backend" | Start or restart the backend on :8000; the page reconnects by itself within a few seconds. Do not reload if it already shows a snapshot. |
-| "Snapshot from HH:MM:SS" banner | The backend is unreachable and you are looking at cached numbers. Say so honestly, restore the backend, wait for the banner to clear. |
-| "updating every 2 seconds" banner | SSE is down; polling covers it. The demo still works, only a little less instant. Carry on. |
+| Page will not load | Check `npm start -- -p 3001` is still running. Restart it. |
+| "Can't reach the backend" | Neither backend nor snapshot is available. Check `public/export/snapshot.json` exists; rebuild; start the backend. |
+| SNAPSHOT badge when you wanted live | The backend is unreachable. Start it; the page reconnects within about 5 seconds. Meanwhile present snapshot mode honestly. |
+| Start, train or force-offline buttons do nothing | They are disabled on a snapshot. Wait for the backend or stay on the snapshot script. |
+| "updating every 2 seconds" banner | SSE is down; polling covers it. Carry on. |
 | Stream started but nothing moves | Press stop then start on `/live`. Check the backend log. |
-| Training round never finishes or progress freezes | The progress indicator clears itself after about 30 seconds without events. Check the backend log. Show the earlier rounds on `/training` and move on to `/results`. |
-| Vercel backup shows a stale or empty state | The tunnel URL changed or the tunnel is down. Use the local build on :3001 instead. |
-| Everything is broken | Build with `NEXT_PUBLIC_DATA_SOURCE=snapshot` and present with the **SNAPSHOT** badge visible, saying clearly that these are saved results, not live. |
+| Training round freezes | Progress clears itself after about 30 seconds without events. Show the earlier rounds on `/training` and move on to `/results`. |
+| Vercel backup shows older rounds | The bundled snapshot is stale. Run `npm run sync:snapshot`, commit, redeploy. |
+| Someone asks about live savings | "There is no live traffic in this data yet, so we are not claiming a number." |
 
 ## After
 
