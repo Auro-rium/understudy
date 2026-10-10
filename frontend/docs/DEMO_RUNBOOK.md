@@ -6,8 +6,8 @@ One page for the presenter. Read the numbers off the screen; do not quote figure
 
 - [ ] Backend up on :8000: `curl http://127.0.0.1:8000/api/health` returns a model version and `online`.
 - [ ] `start.sh` stack up: mlx server on :8080, Open WebUI on :3000 (leave it alone).
-- [ ] Frontend built with the **real backend**: `NEXT_PUBLIC_MOCK=0` in `.env.local`, then `npm run build && npm start -- -p 3001`.
-- [ ] Open http://localhost:3001. **No "MOCK DATA" badge** in the header (unless you are deliberately demoing the mock).
+- [ ] Frontend built for the **real backend**: `NEXT_PUBLIC_DATA_SOURCE=api` in `.env.local`, then `npm run build && npm start -- -p 3001`.
+- [ ] Open http://localhost:3001. **No "SNAPSHOT" badge** in the header (it means the backend is not reachable and saved data is on screen).
 - [ ] No banner under the header. If you see "updating every 2 seconds" or "Snapshot from ...", fix that first (see Recovery).
 - [ ] Load every page once while online (`/`, `/live`, `/training`, `/results`) so the snapshot cache is filled.
 - [ ] Browser: full screen, zoom so the numbers are readable from the back, notifications off, one tab for the app, one for Open WebUI.
@@ -50,7 +50,7 @@ Open WebUI (:3000) also keeps working offline; use it for the base vs trained si
 | Stream started but nothing moves | Press stop then start on `/live`. Check the backend log. |
 | Training round never finishes or progress freezes | The progress indicator clears itself after about 30 seconds without events. Check the backend log. Show the earlier rounds on `/training` and move on to `/results`. |
 | Vercel backup shows a stale or empty state | The tunnel URL changed or the tunnel is down. Use the local build on :3001 instead. |
-| Everything is broken | Rebuild with `NEXT_PUBLIC_MOCK=1` and present with the **MOCK DATA** badge visible, saying clearly that the numbers are sample data. |
+| Everything is broken | Build with `NEXT_PUBLIC_DATA_SOURCE=snapshot` and present with the **SNAPSHOT** badge visible, saying clearly that these are saved results, not live. |
 
 ## After
 

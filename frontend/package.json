@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync:snapshot": "bash scripts/sync-snapshot.sh"
   },
   "dependencies": {
     "motion": "^14.1.0",

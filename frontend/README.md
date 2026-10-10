@@ -34,8 +34,6 @@ npm run dev -- -p 3001
 
 Use the production build (`npm start`) for the actual demo: it is faster and has no dev overlay.
 
-Screenshots of every screen (1920x1080, mock data) are in [`docs/screenshots/`](docs/screenshots/).
-
 ## Environment variables
 
 Set in `.env.local` (copy from `.env.example`). `NEXT_PUBLIC_*` values are **baked in at build time**, so rebuild after changing them.
@@ -43,15 +41,9 @@ Set in `.env.local` (copy from `.env.example`). `NEXT_PUBLIC_*` values are **bak
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | Base URL of the FastAPI backend. On Vercel this is the cloudflared tunnel URL. |
-| `NEXT_PUBLIC_MOCK` | `1` in `.env.example` | `1` = serve everything from the in-browser mock and show a **MOCK DATA** badge in the header. `0` = talk to the real backend at `NEXT_PUBLIC_API_URL`. |
+| `NEXT_PUBLIC_DATA_SOURCE` | `api` | `api` = use the live backend, falling back to the newest saved snapshot (browser cache or bundled `public/export/snapshot.json`) with a **SNAPSHOT** badge when it is unreachable. `snapshot` = never call the API; show the bundled snapshot only. |
 
-To run against the real backend: set `NEXT_PUBLIC_MOCK=0`, make sure the backend is up on :8000, then rebuild.
-
-## The mock layer
-
-`src/lib/mock/engine.ts` is a deterministic in-browser simulator that implements the whole API contract below, including the live event feed, training rounds and offline mode. `src/lib/api.ts` picks the mock or `fetch` per call, and `src/lib/events.ts` picks the mock event bus or SSE, so pages never know which one they are talking to. Response shapes are defined once in `src/lib/types.ts` and mirror the backend.
-
-The mock is seeded (about 30 minutes of history, several past training rounds) so every page has something to show on first load. Nothing is persisted: reloading resets the simulation. Whenever mock data is on, the **MOCK DATA** badge is visible. Never present mock numbers as measured results.
+To run against the real backend, make sure it is up on :8000. Refresh the bundled snapshot with `npm run sync:snapshot`.
 
 ## API contract
 
@@ -98,7 +90,7 @@ While the backend is reachable the store saves the latest good state to `localSt
 | `/training` | Run a training round and watch it progress from collect to train to evaluate to promote |
 | `/results` | Base vs trained vs teacher: accuracy, speed, cost, per-category F1, confusion |
 
-Shared code: `src/lib/` (types, API, events, store, snapshot, format, mock), `src/components/ui/` (primitives), `src/components/shell/` (nav, banners), `src/components/landing/`.
+Shared code: `src/lib/` (types, API, events, store, snapshot, categories, format), `src/components/ui/` (primitives), `src/components/shell/` (nav, banners), `src/components/landing/`.
 
 ## Demo script
 
@@ -117,7 +109,7 @@ Short version (the full presenter checklist is in [`docs/DEMO_RUNBOOK.md`](docs/
 1. Import the repo in Vercel and set **Root Directory** to `frontend`. Leave the build and output settings at their defaults.
 2. Set environment variables:
    - `NEXT_PUBLIC_API_URL` = your cloudflared tunnel URL (see below), `https://...trycloudflare.com`
-   - `NEXT_PUBLIC_MOCK` = `0` for the real backend, or `1` for a public preview that runs entirely on mock data
+   - `NEXT_PUBLIC_DATA_SOURCE` = `api` for the real backend, or `snapshot` for a public preview that shows only the bundled snapshot
 3. Deploy.
 
 Things to know:
@@ -154,7 +146,7 @@ Whether the trained model appears in Open WebUI depends on the backend actually 
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| "MOCK DATA" badge when you expected real data | `NEXT_PUBLIC_MOCK` is `1`. Set it to `0` in `.env.local` and rebuild. |
+| "SNAPSHOT" badge when you expected live data | The backend is unreachable, or `NEXT_PUBLIC_DATA_SOURCE` is `snapshot`. Check `.env.local` and the backend, then rebuild. |
 | "Can't reach the backend" banner | Backend not running on :8000, or `NEXT_PUBLIC_API_URL` is wrong. Check `curl http://127.0.0.1:8000/api/health`. |
 | Changed `.env.local` but nothing changed | `NEXT_PUBLIC_` values are baked at build time. Rebuild (`npm run build`) or restart `npm run dev`. |
 | Browser console shows a CORS error | Backend CORS does not allow this origin (`http://localhost:3001` or the Vercel URL). |
