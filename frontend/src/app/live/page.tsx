@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { MockBadge } from "@/components/ui";
+import { DataBadge } from "@/components/ui";
 import { ControlsBar } from "@/components/live/ControlsBar";
 import { CostChart } from "@/components/live/CostChart";
 import { LiveCounters } from "@/components/live/LiveCounters";
@@ -19,7 +19,7 @@ export default function LivePage() {
       <div className="mx-auto flex w-full max-w-[120rem] flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-8 sm:py-8 2xl:min-h-0 2xl:flex-1 2xl:gap-4 2xl:py-4">
         <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="display text-4xl font-semibold leading-none sm:text-5xl 2xl:text-4xl">Live</h1>
-          <MockBadge />
+          <DataBadge />
           <p className="basis-full text-xl text-ink-2 sm:basis-auto">
             Gemma answers locally and asks the cloud teacher only when unsure.
           </p>

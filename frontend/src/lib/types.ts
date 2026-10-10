@@ -1,6 +1,7 @@
 /**
  * Single source of truth for every API payload.
- * These mirror the FastAPI contract exactly; pages never see "mock vs real".
+ * These mirror the FastAPI contract (backend/schemas.py) exactly.
+ * Category is always the backend LETTER ("A".."H"); go through lib/categories.ts for names/labels.
  */
 
 export type Mode = "online" | "offline";
@@ -13,13 +14,15 @@ export interface Health {
 }
 
 export interface ClassifyResult {
-  id: string;
-  category: number;
+  id: number;
+  /** backend category letter "A".."H" */
+  category: string;
+  /** raw backend name, e.g. "payment_delay" (use categoryLabel() for display) */
   category_name: string;
-  priority: string; // "low" | "medium" | "high" | "urgent"
+  priority: string; // "P1" | "P2" | "P3" | "P4"
   team: string;
   source: Source;
-  confidence: number; // 0..1
+  confidence: number | null; // 0..1, null when the router had no score
   latency_ms: number;
   cost_usd: number;
   model_version: string;
@@ -50,7 +53,7 @@ export interface TimePoint {
 }
 
 export interface ReviewItem {
-  id: string;
+  id: number;
   text: string;
   created_at: string;
 }
@@ -90,13 +93,18 @@ export interface EvalModel {
 
 export interface EvalCompare {
   provisional: boolean;
+  /** e.g. "base", "round_1", "round_2"; there may be no teacher row */
   models: EvalModel[];
-  router: EvalModel;
-  /** model name -> category name -> F1 */
+  /** null until a router eval exists (the API sends {} for that; normalised on load) */
+  router: EvalModel | null;
+  /** model name -> category LETTER -> F1 */
   per_category_f1: Record<string, Record<string, number>>;
-  /** model name -> square matrix, rows = true category, cols = predicted (order = category order in per_category_f1) */
+  /** model name -> 8x8 matrix, rows = true category, cols = predicted, both in letter order A..H */
   confusion: Record<string, number[][]>;
 }
+
+/** Where the data currently on screen came from. */
+export type SnapshotSource = "live" | "cache" | "bundled";
 
 export interface Snapshot {
   generated_at: string; // ISO
@@ -122,6 +130,8 @@ export interface TrainProgress {
   total_steps?: number;
   loss?: number;
   message?: string;
+  /** set when the backend reported a failed round (event type "round_failed") */
+  error?: string;
 }
 
 export interface RoundComplete {
@@ -139,8 +149,10 @@ export type ServerEvent =
 
 /* ---------- requests ---------- */
 
+export type TrainBackend = "mlx_local" | "aws" | "modal";
+
 export interface TrainRoundRequest {
-  backend: string; // e.g. "mlx" | "cloud"
+  backend: TrainBackend;
 }
 export interface TrainRoundResponse {
   job_id: string;

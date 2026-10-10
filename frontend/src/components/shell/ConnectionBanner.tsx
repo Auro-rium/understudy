@@ -1,7 +1,12 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { fmtTime } from "@/lib/format";
+import { fmtDateTime, fmtTime } from "@/lib/format";
+
+/** "10 Oct 2026" part of fmtDateTime */
+function fmtDate(iso: string): string {
+  return fmtDateTime(iso).split(",")[0] ?? "";
+}
 import { cx } from "@/components/ui";
 
 export function ConnectionBanner() {
@@ -10,14 +15,17 @@ export function ConnectionBanner() {
   let text: string | null = null;
   let tone: "amber" | "red" | "muted" = "muted";
 
-  if (state.mode === "offline") {
+  if (state.mode === "offline" && state.connection !== "snapshot") {
     text = "Offline mode — uncertain tickets go to the human review queue";
     tone = "amber";
-  } else if (state.connection === "down" && !state.loaded) {
+  } else if (state.connection === "down") {
     text = "Can't reach the backend";
     tone = "red";
   } else if (state.connection === "snapshot") {
-    text = `Snapshot from ${state.snapshotAt ? fmtTime(state.snapshotAt) : "earlier"} — backend unreachable`;
+    const when = state.snapshotAt ? `${fmtTime(state.snapshotAt)} ${fmtDate(state.snapshotAt)}` : "an earlier time";
+    text = state.apiConfigured
+      ? `Showing a saved snapshot from ${when} — backend not reachable. Controls are disabled.`
+      : `Showing a saved snapshot from ${when} — this copy is not connected to a backend. Controls are disabled.`;
     tone = "muted";
   } else if (state.connection === "polling") {
     text = "Realtime stream unavailable — updating every 2 seconds";

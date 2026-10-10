@@ -1,8 +1,11 @@
 "use client";
 
 /**
- * Single app-wide store: loads everything through `api`, applies live events,
- * keeps a cached snapshot so the UI still has something to show offline.
+ * Single app-wide store. Data comes from the live backend when reachable; otherwise
+ * the best saved snapshot (localStorage cache of the last good live data, or the
+ * bundled /export/snapshot.json, whichever is newer). In NEXT_PUBLIC_DATA_SOURCE=snapshot
+ * mode the API is never called. Nothing here invents data: when the backend is not
+ * reachable the actions reject and the UI shows a snapshot badge instead.
  * Pages only ever call useStore().
  */
 
@@ -16,10 +19,9 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { ApiError, IS_MOCK, api } from "@/lib/api";
+import { API_CONFIGURED, ApiError, api } from "@/lib/api";
 import { subscribe, type EventStatus } from "@/lib/events";
-import { TEACHER_COST_PER_TICKET } from "@/lib/mock/seed";
-import { loadSnapshot, saveSnapshot } from "@/lib/snapshot";
+import { loadBestSnapshot, loadBundledSnapshot, saveSnapshot } from "@/lib/snapshot";
 import type {
   EvalCompare,
   Health,
@@ -30,15 +32,18 @@ import type {
   RoundComplete,
   ServerEvent,
   Snapshot,
+  SnapshotSource,
   Summary,
   Ticket,
   TimePoint,
+  TrainBackend,
   TrainProgress,
   TrainStage,
 } from "@/lib/types";
 
 /* ---------- public types ---------- */
 
+/** "snapshot" covers both the localStorage cache and the bundled file. */
 export type Connection = "live" | "polling" | "snapshot" | "down";
 export type ActiveStage = "idle" | "routing" | TrainStage;
 
@@ -59,9 +64,15 @@ export interface RoundMarker {
 
 export interface StoreState {
   loaded: boolean;
-  isMock: boolean;
   connection: Connection;
+  /** what is currently displayed: "live" API data, the localStorage "cache", or the "bundled" export */
+  dataSource: SnapshotSource;
+  /** generated_at of the snapshot on screen; null when dataSource is "live" */
   snapshotAt: string | null;
+  /** true only while the backend is reachable (connection live or polling); stream/train/offline need it */
+  canControl: boolean;
+  /** false when NEXT_PUBLIC_DATA_SOURCE=snapshot (the app never calls the API) */
+  apiConfigured: boolean;
   health: Health | null;
   summary: Summary | null;
   timeseries: TimePoint[];
@@ -74,27 +85,36 @@ export interface StoreState {
   modelVersion: string;
   streaming: boolean;
   trainProgress: TrainProgress | null;
+  /** message of the last failed training round (cleared by the next progress event) */
+  trainError: string | null;
   /** Loss points of the running job, kept here so they survive page navigation. */
   lossTrace: { jobId: string | null; points: LossPoint[] };
   activeStage: ActiveStage;
   lastRound: LastRound | null;
+  /** rounds completed while watching, anchored on the timeseries; [] when the timeseries is empty */
   roundMarkers: RoundMarker[];
   lastPredictionAt: number | null;
 }
 
 export interface StoreActions {
+  /** all four reject with Error("Backend not reachable — this is a saved snapshot") when !canControl */
   startStream(ratePerMin?: number): Promise<void>;
   stopStream(): Promise<void>;
-  runTrainingRound(backend?: string): Promise<void>;
+  runTrainingRound(backend?: TrainBackend): Promise<void>;
   setOffline(offline: boolean): Promise<void>;
+  /** reload from the API (no-op in snapshot data-source mode) */
   refresh(): Promise<void>;
 }
 
 /* ---------- internals ---------- */
 
+export const NOT_REACHABLE = "Backend not reachable — this is a saved snapshot";
+
 const TICKET_CAP = 100;
 const TRACE_CAP = 2000;
 const REFRESH_MS = 4000;
+const RETRY_MS = 5000;
+const FAILS_BEFORE_SNAPSHOT = 2;
 const EXTRAS_EVERY = 5; // refreshes between evalCompare/rounds reloads
 const FLUSH_MS = 150;
 const ROUTING_MS = 1500;
@@ -115,7 +135,7 @@ interface LoadedData {
 }
 
 type Action =
-  | { type: "init"; data: LoadedData; connection: Connection; snapshotAt: string | null; markers: RoundMarker[] | null }
+  | { type: "init"; data: LoadedData; connection: Connection; dataSource: SnapshotSource; snapshotAt: string | null }
   | { type: "failed" }
   | { type: "connection"; connection: Connection }
   | { type: "eventStatus"; status: EventStatus }
@@ -133,9 +153,11 @@ type Action =
 function initialState(): StoreState {
   return {
     loaded: false,
-    isMock: IS_MOCK,
-    connection: "live",
+    connection: API_CONFIGURED ? "live" : "snapshot",
+    dataSource: API_CONFIGURED ? "live" : "bundled",
     snapshotAt: null,
+    canControl: false,
+    apiConfigured: API_CONFIGURED,
     health: null,
     summary: null,
     timeseries: [],
@@ -147,6 +169,7 @@ function initialState(): StoreState {
     modelVersion: "",
     streaming: false,
     trainProgress: null,
+    trainError: null,
     lossTrace: { jobId: null, points: [] },
     activeStage: "idle",
     lastRound: null,
@@ -156,17 +179,19 @@ function initialState(): StoreState {
 }
 
 function connectionFromStatus(s: EventStatus | null): Connection {
-  return s === "polling" || s === "down" ? "polling" : "live";
+  return s === "polling" ? "polling" : "live";
 }
 
-function reducer(state: StoreState, a: Action): StoreState {
+function step(state: StoreState, a: Action): StoreState {
   switch (a.type) {
-    case "init":
+    case "init": {
+      const live = a.dataSource === "live";
       return {
         ...state,
         loaded: true,
         connection: a.connection,
-        snapshotAt: a.snapshotAt,
+        dataSource: a.dataSource,
+        snapshotAt: live ? null : a.snapshotAt,
         health: a.data.health,
         summary: a.data.summary,
         timeseries: a.data.timeseries,
@@ -176,15 +201,22 @@ function reducer(state: StoreState, a: Action): StoreState {
         evalCompare: a.data.evalCompare,
         mode: a.data.health.mode,
         modelVersion: a.data.health.model_version,
-        roundMarkers: a.markers ?? state.roundMarkers,
+        // markers are anchored on timeseries points: none without a timeseries, and only for rounds that still exist
+        roundMarkers:
+          live && a.data.timeseries.length > 0
+            ? state.roundMarkers.filter((m) => a.data.rounds.some((r) => r.model_version === m.version))
+            : [],
+        // a snapshot has no running job and no stream
+        ...(live ? {} : { trainProgress: null, activeStage: "idle" as ActiveStage, streaming: false }),
       };
+    }
     case "failed":
       return { ...state, loaded: true, connection: "down" };
     case "connection":
       return state.connection === a.connection ? state : { ...state, connection: a.connection };
     case "eventStatus": {
-      if (state.connection === "snapshot") return state;
-      const next = a.status === "down" ? "down" : connectionFromStatus(a.status);
+      if (state.dataSource !== "live" || a.status === "down") return state;
+      const next = connectionFromStatus(a.status);
       return state.connection === next ? state : { ...state, connection: next };
     }
     case "predictions": {
@@ -197,16 +229,9 @@ function reducer(state: StoreState, a: Action): StoreState {
         .filter((t) => t.source === "review" && !queued.has(t.id))
         .map((t) => ({ id: t.id, text: t.text, created_at: t.created_at }));
       const cost = fresh.reduce((sum, t) => sum + t.cost_usd, 0);
+      // only exact counters are bumped here; shares and cost_avoided come from the next summary refresh
       const summary = state.summary
-        ? {
-            ...state.summary,
-            total: state.summary.total + fresh.length,
-            cost_usd_total: state.summary.cost_usd_total + cost,
-            cost_avoided_usd: Math.max(
-              0,
-              state.summary.cost_avoided_usd + fresh.length * TEACHER_COST_PER_TICKET - cost,
-            ),
-          }
+        ? { ...state.summary, total: state.summary.total + fresh.length, cost_usd_total: state.summary.cost_usd_total + cost }
         : state.summary;
       return {
         ...state,
@@ -224,6 +249,9 @@ function reducer(state: StoreState, a: Action): StoreState {
       return state;
     case "train_progress": {
       const d = a.data;
+      if (d.error !== undefined) {
+        return { ...state, trainProgress: null, trainError: d.error, activeStage: "idle" };
+      }
       let trace = state.lossTrace;
       if (trace.jobId !== d.job_id) trace = { jobId: d.job_id, points: [] };
       if (d.step !== undefined && d.loss !== undefined) {
@@ -232,7 +260,7 @@ function reducer(state: StoreState, a: Action): StoreState {
           trace = { jobId: trace.jobId, points: [...trace.points, { step: d.step, loss: d.loss }].slice(-TRACE_CAP) };
         }
       }
-      return { ...state, trainProgress: d, lossTrace: trace, activeStage: d.stage };
+      return { ...state, trainProgress: d, trainError: null, lossTrace: trace, activeStage: d.stage };
     }
     case "trainStale":
       if (state.trainProgress === null) return state;
@@ -243,14 +271,13 @@ function reducer(state: StoreState, a: Action): StoreState {
       };
     case "round_complete": {
       const r = a.data.round;
+      const previous = a.data.previous_model_version || state.modelVersion;
       const rounds = [...state.rounds.filter((x) => x.round !== r.round), r].sort((x, y) => x.round - y.round);
-      const version = r.promoted ? r.model_version : a.data.previous_model_version;
+      const version = r.promoted ? r.model_version : previous;
       const lastPoint = state.timeseries[state.timeseries.length - 1];
-      const marker: RoundMarker = {
-        at: lastPoint ? lastPoint.t : new Date(a.at).toISOString(),
-        version: r.model_version,
-        promoted: r.promoted,
-      };
+      const marker: RoundMarker | null = lastPoint
+        ? { at: lastPoint.t, version: r.model_version, promoted: r.promoted }
+        : null;
       return {
         ...state,
         rounds,
@@ -258,16 +285,17 @@ function reducer(state: StoreState, a: Action): StoreState {
         health: state.health ? { ...state.health, model_version: version } : state.health,
         summary: state.summary ? { ...state.summary, model_version: version } : state.summary,
         trainProgress: null,
+        trainError: null,
         activeStage: "idle",
         lastRound: {
           round: r,
-          previousVersion: a.data.previous_model_version,
+          previousVersion: previous,
           localShareBefore: a.before,
           localShareAfter: a.after,
           delta: a.after - a.before,
           at: a.at,
         },
-        roundMarkers: [...state.roundMarkers.filter((m) => m.version !== marker.version), marker],
+        roundMarkers: marker ? [...state.roundMarkers.filter((m) => m.version !== marker.version), marker] : [],
       };
     }
     case "lastRoundAfter":
@@ -296,12 +324,20 @@ function reducer(state: StoreState, a: Action): StoreState {
         health: a.health,
         mode: a.health.mode,
         modelVersion: a.health.model_version,
+        roundMarkers: a.timeseries.length > 0 ? state.roundMarkers : [],
       };
     case "extras":
       return { ...state, rounds: a.rounds, evalCompare: a.evalCompare };
     case "streaming":
       return { ...state, streaming: a.on };
   }
+}
+
+function reducer(state: StoreState, a: Action): StoreState {
+  const next = step(state, a);
+  const canControl =
+    API_CONFIGURED && next.loaded && next.dataSource === "live" && (next.connection === "live" || next.connection === "polling");
+  return next.canControl === canControl ? next : { ...next, canControl };
 }
 
 function fromSnapshot(s: Snapshot): LoadedData {
@@ -357,40 +393,63 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const lastProgressAtRef = useRef(0);
   const inflightRef = useRef(false);
   const refreshCountRef = useRef(0);
+  const failCountRef = useRef(0);
 
   useEffect(() => {
     stateRef.current = state;
   });
 
-  /** Full (re)load. Falls back to the cached snapshot if the API is unreachable. */
+  /** Show the best saved snapshot (newer of cache / bundled). Falls to "down" only when there is none. */
+  const showSnapshot = useCallback(async (): Promise<void> => {
+    const best = await loadBestSnapshot();
+    if (best) {
+      dispatch({
+        type: "init",
+        data: fromSnapshot(best.snapshot),
+        connection: "snapshot",
+        dataSource: best.from,
+        snapshotAt: best.snapshot.generated_at,
+      });
+    } else if (stateRef.current.loaded) {
+      dispatch({ type: "connection", connection: "down" });
+    } else {
+      dispatch({ type: "failed" });
+    }
+  }, []);
+
+  /** Full (re)load: live API first; if unreachable, a saved snapshot (unless one is already showing). */
   const loadAll = useCallback(async (): Promise<void> => {
+    if (!API_CONFIGURED) {
+      const bundled = await loadBundledSnapshot();
+      if (bundled) {
+        dispatch({
+          type: "init",
+          data: fromSnapshot(bundled),
+          connection: "snapshot",
+          dataSource: "bundled",
+          snapshotAt: bundled.generated_at,
+        });
+      } else {
+        dispatch({ type: "failed" });
+      }
+      return;
+    }
     try {
       const data = await fetchAll();
-      let markers: RoundMarker[] | null = null;
-      if (stateRef.current.roundMarkers.length === 0) {
-        const m = await api.mockMarkers();
-        markers = m.length ? m : null;
-      }
+      failCountRef.current = 0;
       dispatch({
         type: "init",
         data,
         connection: connectionFromStatus(eventStatusRef.current),
+        dataSource: "live",
         snapshotAt: null,
-        markers,
       });
     } catch {
-      if (stateRef.current.loaded) {
-        dispatch({ type: "connection", connection: stateRef.current.connection === "snapshot" ? "snapshot" : "down" });
-        return;
-      }
-      const snap = loadSnapshot();
-      if (snap) {
-        dispatch({ type: "init", data: fromSnapshot(snap), connection: "snapshot", snapshotAt: snap.generated_at, markers: null });
-      } else {
-        dispatch({ type: "failed" });
-      }
+      const s = stateRef.current;
+      if (s.loaded && (s.dataSource !== "live" || s.connection === "down")) return; // already showing something
+      await showSnapshot();
     }
-  }, []);
+  }, [showSnapshot]);
 
   const loadExtras = useCallback(async (): Promise<void> => {
     const [rounds, evalCompare] = await Promise.all([api.rounds(), api.evalCompare()]);
@@ -427,15 +486,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (data: RoundComplete): void => {
       const before = stateRef.current.summary?.local_share ?? 0;
       dispatch({ type: "round_complete", data, at: Date.now(), before, after: before });
-      if (data.round.promoted) {
-        if (IS_MOCK) {
-          void api.mockLocalTarget().then((t) => {
-            if (t !== null) dispatch({ type: "lastRoundAfter", after: t });
-          });
-        } else {
-          measureUntilRef.current = Date.now() + MEASURE_MS;
-        }
-      }
+      // the "after" share is measured from the live summary for the next couple of minutes
+      if (data.round.promoted) measureUntilRef.current = Date.now() + MEASURE_MS;
       void Promise.all([refreshLight(), loadExtras()]).catch(() => undefined);
     },
     [refreshLight, loadExtras],
@@ -463,36 +515,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [flushPredictions, handleRoundComplete],
   );
 
-  // mount: initial load, event subscription, periodic refresh / retry
+  // mount: initial load, periodic refresh while live, periodic retry while on a snapshot
   useEffect(() => {
     let alive = true;
     void loadAll();
-
-    const unsubscribe = subscribe(onEvent, (status) => {
-      eventStatusRef.current = status;
-      if (alive) dispatch({ type: "eventStatus", status });
-    });
+    if (!API_CONFIGURED) return;
 
     const refreshTimer = setInterval(() => {
       const s = stateRef.current;
-      if (!s.loaded || inflightRef.current) return;
+      if (!s.loaded || inflightRef.current || s.dataSource !== "live" || s.connection === "down") return;
       inflightRef.current = true;
-      const job: Promise<void> =
-        s.connection === "snapshot" || s.connection === "down"
-          ? loadAll()
-          : (async () => {
-              try {
-                await refreshLight();
-                refreshCountRef.current += 1;
-                if (refreshCountRef.current % EXTRAS_EVERY === 0) await loadExtras();
-              } catch {
-                if (alive) dispatch({ type: "connection", connection: "down" });
-              }
-            })();
-      void job.finally(() => {
+      void (async () => {
+        try {
+          await refreshLight();
+          failCountRef.current = 0;
+          refreshCountRef.current += 1;
+          if (refreshCountRef.current % EXTRAS_EVERY === 0) await loadExtras();
+        } catch {
+          failCountRef.current += 1;
+          if (alive && failCountRef.current >= FAILS_BEFORE_SNAPSHOT) await showSnapshot();
+        } finally {
+          inflightRef.current = false;
+        }
+      })();
+    }, REFRESH_MS);
+
+    const retryTimer = setInterval(() => {
+      const s = stateRef.current;
+      if (!s.loaded || inflightRef.current) return;
+      if (s.dataSource === "live" && s.connection !== "down") return;
+      inflightRef.current = true;
+      void loadAll().finally(() => {
         inflightRef.current = false;
       });
-    }, REFRESH_MS);
+    }, RETRY_MS);
 
     const staleTimer = setInterval(() => {
       const s = stateRef.current;
@@ -503,20 +559,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     return () => {
       alive = false;
-      unsubscribe();
       clearInterval(refreshTimer);
+      clearInterval(retryTimer);
       clearInterval(staleTimer);
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       if (routingTimerRef.current) clearTimeout(routingTimerRef.current);
       flushTimerRef.current = null;
       routingTimerRef.current = null;
     };
-  }, [loadAll, loadExtras, refreshLight, onEvent]);
+  }, [loadAll, loadExtras, refreshLight, showSnapshot]);
 
-  // cache the latest good state for offline starts (throttled)
+  // event stream: only while the backend is reachable (SSE, falling back to 2s polling inside subscribe)
+  const reachable = state.canControl;
   useEffect(() => {
-    const { loaded, connection, health, summary, evalCompare } = state;
-    if (!loaded || (connection !== "live" && connection !== "polling")) return;
+    if (!API_CONFIGURED || !reachable) return;
+    const unsubscribe = subscribe(onEvent, (status) => {
+      eventStatusRef.current = status;
+      dispatch({ type: "eventStatus", status });
+    });
+    return () => {
+      unsubscribe();
+      eventStatusRef.current = null;
+    };
+  }, [reachable, onEvent]);
+
+  // cache the latest good live state for offline starts (throttled)
+  useEffect(() => {
+    const { loaded, dataSource, connection, health, summary, evalCompare } = state;
+    if (!loaded || dataSource !== "live" || (connection !== "live" && connection !== "polling")) return;
     if (!health || !summary || !evalCompare) return;
     const now = Date.now();
     if (now - lastSaveRef.current < SAVE_THROTTLE_MS) return;
@@ -533,47 +603,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, [state]);
 
-  const actions = useMemo<StoreActions>(
-    () => ({
+  const actions = useMemo<StoreActions>(() => {
+    const requireBackend = (): void => {
+      if (!stateRef.current.canControl) throw new Error(NOT_REACHABLE);
+    };
+    return {
       startStream: async (ratePerMin?: number) => {
+        requireBackend();
         await api.streamStart(ratePerMin ?? DEFAULT_RATE);
         dispatch({ type: "streaming", on: true });
       },
       stopStream: async () => {
+        requireBackend();
         await api.streamStop();
         dispatch({ type: "streaming", on: false });
       },
-      runTrainingRound: async (backend = "mlx") => {
+      runTrainingRound: async (backend: TrainBackend = "mlx_local") => {
+        requireBackend();
         const { job_id } = await api.trainRound(backend);
         const current = stateRef.current.trainProgress;
         if (current === null || current.job_id !== job_id) {
           lastProgressAtRef.current = Date.now();
+          const maxRound = stateRef.current.rounds.reduce((m, r) => Math.max(m, r.round), 0);
           dispatch({
             type: "train_progress",
-            data: {
-              job_id,
-              round: stateRef.current.rounds.length + 1,
-              stage: "collect",
-              progress: 0,
-              message: "Training round queued",
-            },
+            data: { job_id, round: maxRound + 1, stage: "collect", progress: 0, message: "Training round queued" },
           });
         }
       },
       setOffline: async (offline: boolean) => {
+        requireBackend();
         await api.setOffline(offline);
         dispatch({ type: "mode", mode: offline ? "offline" : "online" });
       },
       refresh: async () => {
+        if (!API_CONFIGURED) return;
+        const s = stateRef.current;
+        if (s.dataSource !== "live" || s.connection === "down") {
+          await loadAll();
+          return;
+        }
         try {
           await Promise.all([refreshLight(), loadExtras()]);
         } catch {
           dispatch({ type: "connection", connection: "down" });
         }
       },
-    }),
-    [refreshLight, loadExtras],
-  );
+    };
+  }, [refreshLight, loadExtras, loadAll]);
 
   const value = useMemo<StoreValue>(() => ({ state, actions }), [state, actions]);
 

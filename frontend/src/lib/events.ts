@@ -1,13 +1,14 @@
 /**
- * Live event feed. Mock mode: the in-browser engine's bus. Real mode: SSE from
- * GET /api/events, falling back to 2s polling when the stream is unavailable.
+ * Live event feed: SSE from GET /api/events, falling back to 2s polling when the
+ * stream is unavailable. Every payload is normalised. In "snapshot" data-source mode
+ * subscribe() does nothing (zero API calls).
  */
 
-import { API_URL, IS_MOCK, api } from "@/lib/api";
-import { getEngine } from "@/lib/mock/engine";
+import { API_CONFIGURED, API_URL, api } from "@/lib/api";
+import { normalizeRoundComplete, normalizeTicket, normalizeTrainProgress } from "@/lib/snapshot";
 import type { Mode, ServerEvent } from "@/lib/types";
 
-export type EventStatus = "sse" | "polling" | "mock" | "down";
+export type EventStatus = "sse" | "polling" | "down";
 
 const EVENT_TYPES = ["prediction", "train_progress", "round_complete", "mode"] as const;
 const POLL_MS = 2000;
@@ -15,10 +16,34 @@ const MAX_BACKOFF_MS = 15000;
 const POLL_TICKETS = 30;
 const SEEN_CAP = 500;
 
-function isServerEvent(v: unknown): v is ServerEvent {
+function isEnvelope(v: unknown): v is { type: string; data: unknown } {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return typeof o.type === "string" && (EVENT_TYPES as readonly string[]).includes(o.type) && "data" in o;
+}
+
+/** Validates and normalises one event payload by type; null when it is not usable. */
+function build(type: string, data: unknown): ServerEvent | null {
+  switch (type) {
+    case "prediction": {
+      const t = normalizeTicket(data);
+      return t ? { type: "prediction", data: t } : null;
+    }
+    case "train_progress": {
+      const p = normalizeTrainProgress(data);
+      return p ? { type: "train_progress", data: p } : null;
+    }
+    case "round_complete": {
+      const r = normalizeRoundComplete(data);
+      return r ? { type: "round_complete", data: r } : null;
+    }
+    case "mode": {
+      const m = (data as { mode?: unknown } | null)?.mode;
+      return m === "online" || m === "offline" ? { type: "mode", data: { mode: m } } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /** Accepts {type,data} envelopes, or a bare payload when the SSE `event:` field names the type. */
@@ -29,12 +54,8 @@ function parseEvent(raw: string, namedType?: string): ServerEvent | null {
   } catch {
     return null;
   }
-  if (isServerEvent(parsed)) return parsed;
-  if (namedType && (EVENT_TYPES as readonly string[]).includes(namedType)) {
-    return isServerEvent({ type: namedType, data: parsed })
-      ? ({ type: namedType, data: parsed } as ServerEvent)
-      : null;
-  }
+  if (isEnvelope(parsed)) return build(parsed.type, parsed.data);
+  if (namedType && (EVENT_TYPES as readonly string[]).includes(namedType)) return build(namedType, parsed);
   return null;
 }
 
@@ -42,11 +63,7 @@ export function subscribe(
   onEvent: (e: ServerEvent) => void,
   onStatus?: (s: EventStatus) => void,
 ): () => void {
-  if (IS_MOCK) {
-    const off = getEngine().subscribe(onEvent);
-    onStatus?.("mock");
-    return off;
-  }
+  if (!API_CONFIGURED) return () => undefined;
 
   let closed = false;
   let es: EventSource | null = null;
@@ -56,7 +73,7 @@ export function subscribe(
   let status: EventStatus | null = null;
 
   // polling state persists across polling sessions so we do not replay old tickets
-  const seen = new Set<string>();
+  const seen = new Set<number>();
   let seeded = false;
   let lastMode: Mode | null = null;
   let lastRound = 0;
@@ -95,7 +112,7 @@ export function subscribe(
         for (const r of rounds.filter((x) => x.round > lastRound).sort((a, b) => a.round - b.round)) {
           onEvent({
             type: "round_complete",
-            data: { job_id: `poll-${r.round}`, round: r, previous_model_version: lastVersion || r.model_version },
+            data: { job_id: `poll-${r.round}`, round: r, previous_model_version: lastVersion },
           });
         }
       }

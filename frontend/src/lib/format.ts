@@ -55,6 +55,17 @@ export function fmtTime(iso: string | number | Date): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** ISO timestamp -> "10 Oct 2026, 13:15" in local time ("–" when unparseable). */
+export function fmtDateTime(iso: string | number | Date, withSeconds = false): string {
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return "–";
+  const p = (n: number) => String(n).padStart(2, "0");
+  const time = withSeconds ? fmtTime(d) : `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${time}`;
+}
+
 /** Percentage-point delta. Input is already in points (12.4 -> "+12.4 pts"). */
 export function fmtDelta(pts: number, digits = 1): string {
   if (!Number.isFinite(pts)) return "–";

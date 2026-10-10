@@ -14,6 +14,7 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import { Card, cx } from "@/components/ui";
+import { categoryLabel } from "@/lib/categories";
 import { fmtDelta, fmtPct } from "@/lib/format";
 import type { EvalCompare } from "@/lib/types";
 import {
@@ -108,7 +109,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
     for (const ser of s) for (const c of Object.keys(per[ser.name])) if (!cats.includes(c)) cats.push(c);
 
     const d: Datum[] = cats.map((c) => {
-      const row: Datum = { category: c };
+      const row: Datum = { category: categoryLabel(c) };
       for (const ser of s) row[ser.id] = per[ser.name]?.[c];
       return row;
     });
@@ -131,7 +132,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
       }
       if (bestC && bestGain > 0) {
         out.push(
-          `Biggest improvement: ${bestC}, ${fmtDelta(bestGain)} from ${sb.name} to ${sl.name} (${fmtPct(
+          `Biggest improvement: ${categoryLabel(bestC)}, ${fmtDelta(bestGain)} from ${sb.name} to ${sl.name} (${fmtPct(
             per[sb.name][bestC],
             1,
           )} to ${fmtPct(per[sl.name][bestC], 1)} F1).`,
@@ -152,7 +153,7 @@ export function CategoryF1Chart({ evalCompare }: { evalCompare: EvalCompare }) {
         }
       }
       if (gapC) {
-        out.push(`Largest remaining gap to the teacher: ${gapC}, ${fmtDelta(-gap)} (${sl.name} vs ${st.name}).`);
+        out.push(`Largest remaining gap to the teacher: ${categoryLabel(gapC)}, ${fmtDelta(-gap)} (${sl.name} vs ${st.name}).`);
       }
     }
     return { series: s, data: d, callouts: out };

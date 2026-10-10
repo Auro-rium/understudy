@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
+import { categoryLabel } from "@/lib/categories";
 import { useStore } from "@/lib/store";
 import { fmtInt, fmtMs, fmtTime, fmtUsd } from "@/lib/format";
 import { Card, ConfidenceBar, EmptyState, PriorityChip, SourceChip, cx } from "@/components/ui";
@@ -32,7 +33,7 @@ function FeedRow({ ticket, animateIn }: { ticket: Ticket; animateIn: boolean }) 
         <p className="num mt-0.5 text-base text-ink-3">{fmtTime(ticket.created_at)}</p>
       </div>
       <div className="min-w-0">
-        <p className="truncate text-lg font-medium text-ink">{ticket.category_name}</p>
+        <p className="truncate text-lg font-medium text-ink">{categoryLabel(ticket.category)}</p>
         <p className="truncate text-base text-ink-3">{ticket.team}</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 md:contents">
@@ -81,7 +82,7 @@ function FeedList({ tickets }: { tickets: Ticket[] }) {
       ) : (
         <ul aria-label="Most recent tickets, newest first">
           {tickets.map((t) => (
-            <FeedRow key={t.id} ticket={t} animateIn={!initialIds.has(t.id)} />
+            <FeedRow key={String(t.id)} ticket={t} animateIn={!initialIds.has(t.id)} />
           ))}
         </ul>
       )}

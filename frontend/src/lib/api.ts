@@ -1,9 +1,20 @@
 /**
- * API client. In mock mode (NEXT_PUBLIC_MOCK=1) every call is served by the
- * in-browser engine; otherwise it hits the FastAPI backend at API_URL.
- * Callers cannot tell the difference.
+ * API client for the FastAPI backend. Config:
+ *   NEXT_PUBLIC_API_URL      default http://127.0.0.1:8000
+ *   NEXT_PUBLIC_DATA_SOURCE  "api" (default) | "snapshot"  -- "snapshot" never calls the API.
+ * Every response is passed through the normaliser in lib/snapshot.ts.
  */
 
+import {
+  normalizeEvalCompare,
+  normalizeHealth,
+  normalizeReviewItem,
+  normalizeRound,
+  normalizeSnapshot,
+  normalizeSummary,
+  normalizeTicket,
+  normalizeTimePoint,
+} from "@/lib/snapshot";
 import type {
   ClassifyResult,
   EvalCompare,
@@ -14,12 +25,16 @@ import type {
   Summary,
   Ticket,
   TimePoint,
+  TrainBackend,
   TrainRoundResponse,
 } from "@/lib/types";
-import { getEngine } from "@/lib/mock/engine";
 
-export const IS_MOCK: boolean = process.env.NEXT_PUBLIC_MOCK === "1";
-export const API_URL: string = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+export type DataSourceMode = "api" | "snapshot";
+
+export const API_URL: string = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+export const DATA_SOURCE: DataSourceMode = process.env.NEXT_PUBLIC_DATA_SOURCE === "snapshot" ? "snapshot" : "api";
+/** false in "snapshot" mode: the app must make zero API calls. */
+export const API_CONFIGURED: boolean = DATA_SOURCE === "api";
 
 const TIMEOUT_MS = 4000;
 
@@ -36,6 +51,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: { method: "POST"; body?: unknown }): Promise<T> {
+  if (!API_CONFIGURED) throw new ApiError(`API disabled (NEXT_PUBLIC_DATA_SOURCE=snapshot): ${path}`, null, path);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -60,6 +76,17 @@ async function request<T>(path: string, init?: { method: "POST"; body?: unknown 
   }
 }
 
+function list<T>(raw: unknown, one: (v: unknown) => T | null): T[] {
+  const out: T[] = [];
+  if (Array.isArray(raw)) {
+    for (const v of raw) {
+      const n = one(v);
+      if (n) out.push(n);
+    }
+  }
+  return out;
+}
+
 export interface Api {
   health(): Promise<Health>;
   classify(text: string): Promise<ClassifyResult>;
@@ -70,50 +97,31 @@ export interface Api {
   rounds(): Promise<Round[]>;
   evalCompare(): Promise<EvalCompare>;
   snapshot(): Promise<Snapshot>;
-  trainRound(backend: string): Promise<TrainRoundResponse>;
+  trainRound(backend: TrainBackend): Promise<TrainRoundResponse>;
   streamStart(ratePerMin: number): Promise<void>;
   streamStop(): Promise<void>;
   setOffline(offline: boolean): Promise<void>;
-  /** Mock only: nominal local share of the serving model (null against a real backend). */
-  mockLocalTarget(): Promise<number | null>;
-  /** Mock only: where the history rounds were promoted (empty against a real backend). */
-  mockMarkers(): Promise<{ at: string; version: string; promoted: boolean }[]>;
 }
 
-const mockApi: Api = {
-  health: () => getEngine().health(),
-  classify: (text) => getEngine().classify(text),
-  summary: () => getEngine().summary(),
-  timeseries: () => getEngine().timeseries(),
-  recentTickets: (limit = 50) => getEngine().recentTickets(limit),
-  reviewQueue: () => getEngine().reviewQueue(),
-  rounds: () => getEngine().rounds(),
-  evalCompare: () => getEngine().evalCompare(),
-  snapshot: () => getEngine().snapshot(),
-  trainRound: (backend) => getEngine().trainRound({ backend }),
-  streamStart: async (ratePerMin) => {
-    await getEngine().streamStart(ratePerMin);
+export const api: Api = {
+  health: async () => normalizeHealth(await request<unknown>("/api/health")),
+  classify: async (text) => {
+    const raw = await request<Record<string, unknown>>("/api/classify", { method: "POST", body: { text } });
+    const t = normalizeTicket({ ...raw, text, created_at: "" });
+    if (!t) throw new ApiError("Malformed /api/classify response", null, "/api/classify");
+    return t;
   },
-  streamStop: async () => {
-    await getEngine().streamStop();
+  summary: async () => normalizeSummary(await request<unknown>("/api/metrics/summary")),
+  timeseries: async () => list(await request<unknown>("/api/metrics/timeseries"), normalizeTimePoint),
+  recentTickets: async (limit = 50) => list(await request<unknown>(`/api/tickets/recent?limit=${limit}`), normalizeTicket),
+  reviewQueue: async () => list(await request<unknown>("/api/review_queue"), normalizeReviewItem),
+  rounds: async () => list(await request<unknown>("/api/rounds"), normalizeRound).sort((a, b) => a.round - b.round),
+  evalCompare: async () => normalizeEvalCompare(await request<unknown>("/api/eval/compare")),
+  snapshot: async () => {
+    const s = normalizeSnapshot(await request<unknown>("/api/snapshot"));
+    if (!s) throw new ApiError("Malformed /api/snapshot response", null, "/api/snapshot");
+    return s;
   },
-  setOffline: async (offline) => {
-    await getEngine().setOffline(offline);
-  },
-  mockLocalTarget: async () => getEngine().peekLocalTarget(),
-  mockMarkers: async () => getEngine().historyMarkers(),
-};
-
-const realApi: Api = {
-  health: () => request<Health>("/api/health"),
-  classify: (text) => request<ClassifyResult>("/api/classify", { method: "POST", body: { text } }),
-  summary: () => request<Summary>("/api/metrics/summary"),
-  timeseries: () => request<TimePoint[]>("/api/metrics/timeseries"),
-  recentTickets: (limit = 50) => request<Ticket[]>(`/api/tickets/recent?limit=${limit}`),
-  reviewQueue: () => request<ReviewItem[]>("/api/review_queue"),
-  rounds: () => request<Round[]>("/api/rounds"),
-  evalCompare: () => request<EvalCompare>("/api/eval/compare"),
-  snapshot: () => request<Snapshot>("/api/snapshot"),
   trainRound: (backend) => request<TrainRoundResponse>("/api/train/round", { method: "POST", body: { backend } }),
   streamStart: async (ratePerMin) => {
     await request<unknown>("/api/stream/start", { method: "POST", body: { rate_per_min: ratePerMin } });
@@ -124,8 +132,4 @@ const realApi: Api = {
   setOffline: async (offline) => {
     await request<unknown>("/api/mode/offline", { method: "POST", body: { offline } });
   },
-  mockLocalTarget: async () => null,
-  mockMarkers: async () => [],
 };
-
-export const api: Api = IS_MOCK ? mockApi : realApi;

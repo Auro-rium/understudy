@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Card, cx } from "@/components/ui";
+import { categoryLabel } from "@/lib/categories";
 import { fmtInt, fmtPct } from "@/lib/format";
 import type { EvalCompare } from "@/lib/types";
 import { buildRows, latestTrained, rampColor } from "./model-meta";
@@ -71,7 +72,7 @@ export function ConfusionHeatmap({ evalCompare }: { evalCompare: EvalCompare }) 
   if (!active || !matrix || matrix.length === 0) return null;
 
   const n = matrix.length;
-  const keyed = Object.keys(evalCompare.per_category_f1[active] ?? {});
+  const keyed = Object.keys(evalCompare.per_category_f1[active] ?? {}).map(categoryLabel);
   const names =
     keyed.length === n ? keyed : Array.from({ length: n }, (_, i) => keyed[i] ?? `Category ${i + 1}`);
   const rowTotals = matrix.map((r) => r.reduce((a, b) => a + b, 0));

@@ -1,22 +1,23 @@
 "use client";
 
 import type { Mode } from "@/lib/types";
+import { fmtDateTime } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cx } from "./cx";
 
-/** Visible only when the store is serving seeded mock data. */
-export function MockBadge({ className }: { className?: string }) {
+/** Visible only when the app is showing a saved snapshot (localStorage cache or bundled export), never for live data. */
+export function DataBadge({ className }: { className?: string }) {
   const { state } = useStore();
-  if (!state.isMock) return null;
+  if (!state.loaded || state.dataSource === "live") return null;
   return (
     <span
       className={cx(
         "inline-flex items-center rounded-md border border-spot bg-spot/10 px-2 py-0.5 text-base font-bold tracking-wide text-spot",
         className,
       )}
-      title="The backend isn't providing these numbers; they are seeded sample data."
+      title="Saved export from the backend, not live data"
     >
-      MOCK DATA
+      SNAPSHOT{state.snapshotAt ? ` · ${fmtDateTime(state.snapshotAt)}` : ""}
     </span>
   );
 }

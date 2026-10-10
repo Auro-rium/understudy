@@ -26,20 +26,20 @@ export function SourceChip({ source, className }: { source: Source; className?: 
 }
 
 const PRIORITY: Record<string, string> = {
-  urgent: "text-bad border-bad/50",
-  high: "text-spot border-spot/50",
-  medium: "text-ink-2 border-line-strong",
-  low: "text-ink-3 border-line",
+  p1: "text-bad border-bad/50",
+  p2: "text-spot border-spot/50",
+  p3: "text-ink-2 border-line-strong",
+  p4: "text-ink-3 border-line",
 };
 
 export function PriorityChip({ priority, className }: { priority: string; className?: string }) {
   const key = priority.toLowerCase();
-  const label = key.charAt(0).toUpperCase() + key.slice(1);
+  const label = priority.toUpperCase();
   return (
     <span
       className={cx(
         "inline-flex items-center rounded-full border px-2.5 py-0.5 text-base font-medium leading-6",
-        PRIORITY[key] ?? PRIORITY.medium,
+        PRIORITY[key] ?? PRIORITY.p3,
         className,
       )}
     >
@@ -54,10 +54,11 @@ export function ConfidenceBar({
   source,
   className,
 }: {
-  value: number;
+  value: number | null;
   source?: Source;
   className?: string;
 }) {
+  if (value === null) return <span className={cx("num text-base text-ink-3", className)}>–</span>;
   const v = Math.min(1, Math.max(0, value));
   const fill = source ? SOURCE[source].dot : "bg-ink-2";
   return (
