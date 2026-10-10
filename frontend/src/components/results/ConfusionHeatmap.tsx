@@ -124,7 +124,7 @@ export function ConfusionHeatmap({ evalCompare, rows }: { evalCompare: EvalCompa
       : `True ${names[i]}, predicted ${names[j]}: ${fmtInt(c)} ${c === 1 ? "ticket" : "tickets"}, ${fmtPct(p, 1)} of true ${names[i]}`;
   };
 
-  const gridCols = narrow ? `5.75rem repeat(${n}, minmax(0, 1fr))` : `minmax(7.5rem, 13rem) repeat(${n}, minmax(4.25rem, 1fr))`;
+  const gridCols = narrow ? `6.75rem repeat(${n}, minmax(0, 1fr))` : `minmax(7.5rem, 13rem) repeat(${n}, minmax(4.25rem, 1fr))`;
 
   // Diagonal first, then the rest fills in from the top-left.
   const delayFor = (i: number, j: number) => {
@@ -241,20 +241,16 @@ export function ConfusionHeatmap({ evalCompare, rows }: { evalCompare: EvalCompa
                   title={nm}
                   className={cx(
                     "flex pb-1 text-base leading-tight",
-                    narrow ? "h-32 items-start justify-center" : "items-end justify-center px-1 text-center",
+                    "h-32 items-start justify-center",
                     hover?.j === j ? "font-semibold text-ink" : "text-ink-2",
                   )}
                 >
-                  {narrow ? (
-                    <span
-                      className="whitespace-nowrap"
-                      style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
-                    >
-                      {nm}
-                    </span>
-                  ) : (
-                    <span className="line-clamp-3 break-words">{nm}</span>
-                  )}
+                  <span
+                    className="whitespace-nowrap"
+                    style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+                  >
+                    {nm}
+                  </span>
                 </div>
               ))}
 

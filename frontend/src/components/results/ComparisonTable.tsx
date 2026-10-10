@@ -30,7 +30,67 @@ export function ComparisonTable({ rows, testSize }: { rows: ModelRow[]; testSize
         Every model on the same {testSize !== null ? `${fmtInt(testSize)} ` : ""}test tickets. Changes are
         against the base model.
       </p>
-      <div className="-mx-1 overflow-x-auto">
+      <ul className="space-y-3 sm:hidden" aria-label="Models compared on the same test tickets">
+        {rows.map((r) => (
+          <li
+            key={r.model.name}
+            className={cx(
+              "rounded-lg border border-line p-3",
+              r.isCurrent ? "border-l-4 border-l-spot bg-spot/[0.08]" : "bg-surface-2/40",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <span aria-hidden className="mt-1.5 size-3.5 flex-none rounded-sm" style={{ background: r.color }} />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <span className={cx("text-lg leading-tight text-ink", r.isCurrent ? "font-bold" : "font-medium")}>
+                    {r.label}
+                  </span>
+                  <StatusTag row={r} />
+                </div>
+                <p className="mt-0.5 text-base text-ink-3">{r.role}</p>
+                {r.reason ? <p className="text-base text-ink-3">{r.reason}</p> : null}
+              </div>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+              {METRICS.map((m, mi) => {
+                const v = r.model[m.key];
+                const isBest = best[mi].has(r.model.name);
+                const d = base && r.kind !== "base" ? m.delta(v, base.model[m.key]) : null;
+                const good = base ? isImprovement(m, v, base.model[m.key]) : null;
+                return (
+                  <div key={m.key}>
+                    <dt className="text-base text-ink-3">{m.head}</dt>
+                    <dd className="flex flex-wrap items-center gap-x-2">
+                      <AnimatedNumber
+                        value={v}
+                        format={m.format}
+                        className={cx("text-lg", isBest ? "font-bold text-ink" : "text-ink-2")}
+                      />
+                      {isBest ? (
+                        <span className="rounded border border-good/60 px-1.5 py-px text-base font-semibold leading-6 text-good">
+                          ▲ best
+                        </span>
+                      ) : null}
+                    </dd>
+                    {d ? (
+                      <dd
+                        className={cx(
+                          "num text-base",
+                          good === true ? "text-good" : good === false ? "text-bad" : "text-ink-3",
+                        )}
+                      >
+                        {d} <span className="text-ink-3">vs base</span>
+                      </dd>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="-mx-1 hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[56rem] border-separate border-spacing-0 text-left">
           <caption className="sr-only">
             Evaluation metrics per model: category accuracy, macro-F1, priority accuracy, latency and

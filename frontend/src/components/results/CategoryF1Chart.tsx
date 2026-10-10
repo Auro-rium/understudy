@@ -30,7 +30,7 @@ import { useNarrow } from "./useNarrow";
 
 function CategoryTick({ x = 0, y = 0, payload, narrow }: AxisTickProps & { narrow: boolean }) {
   const name = String(payload?.value ?? "");
-  const lines = wrapLabel(name, narrow ? 13 : 24, 2);
+  const lines = wrapLabel(name, narrow ? 10 : 24, 2);
   const px = Number(x);
   const py = Number(y);
   return (
@@ -297,7 +297,7 @@ export function CategoryF1Chart({ evalCompare, rows }: { evalCompare: EvalCompar
               <XAxis
                 type="number"
                 domain={[0, 1]}
-                ticks={[0, 0.25, 0.5, 0.75, 1]}
+                ticks={narrow ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1]}
                 tickFormatter={(v: number) => fmtPct(v, 0)}
                 tickLine={false}
                 axisLine={false}
@@ -307,7 +307,7 @@ export function CategoryF1Chart({ evalCompare, rows }: { evalCompare: EvalCompar
               <YAxis
                 type="category"
                 dataKey="category"
-                width={narrow ? 120 : 210}
+                width={narrow ? 112 : 210}
                 tickLine={false}
                 axisLine={{ stroke: AXIS_LINE }}
                 interval={0}

@@ -15,7 +15,7 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import { Card } from "@/components/ui";
-import { AXIS_LINE, AXIS_TEXT, GRID, MUTED_TEXT, TooltipShell, type AxisTickProps } from "./chart-parts";
+import { AXIS_LINE, AXIS_TEXT, GRID, MUTED_TEXT, TooltipShell, wrapLabel, type AxisTickProps } from "./chart-parts";
 import { METRICS, baseRow, type MetricDef, type MetricKey, type ModelRow } from "./model-meta";
 import { Segmented } from "./Segmented";
 import { useNarrow } from "./useNarrow";
@@ -42,6 +42,7 @@ function ModelTick({ x = 0, y = 0, payload, rows }: AxisTickProps & { rows: Mode
   const px = Number(x);
   const py = Number(y);
   const label = row?.label ?? name;
+  const tagLines = row ? wrapLabel(row.tag, 15, 2) : [];
   return (
     <g>
       <title>{row ? `${label}: ${row.tag}` : name}</title>
@@ -52,14 +53,14 @@ function ModelTick({ x = 0, y = 0, payload, rows }: AxisTickProps & { rows: Mode
         textAnchor="end"
         style={{ fill: AXIS_TEXT, fontSize: 17, fontWeight: row?.isCurrent ? 700 : 500 }}
       >
-        <tspan x={px - 20} dy={row ? "-0.2em" : "0.35em"}>
+        <tspan x={px - 20} dy={row ? (tagLines.length > 1 ? "-0.9em" : "-0.2em") : "0.35em"}>
           {label}
         </tspan>
-        {row ? (
-          <tspan x={px - 20} dy="1.3em" style={{ fill: MUTED_TEXT, fontSize: 16, fontWeight: 400 }}>
-            {row.tag}
+        {tagLines.map((l, i) => (
+          <tspan key={i} x={px - 20} dy="1.25em" style={{ fill: MUTED_TEXT, fontSize: 16, fontWeight: 400 }}>
+            {l}
           </tspan>
-        ) : null}
+        ))}
       </text>
     </g>
   );
